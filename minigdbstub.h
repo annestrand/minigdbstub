@@ -46,24 +46,28 @@ void freeDynCharBuffer(DynCharBuffer *buf) {
 
 int minigdbstubComputeChecksum(char *buffer, size_t len) {
     unsigned char checksum = 0;
-    for (int i=0; i<len; ++i) { checksum += buffer[i]; }
+    for (int i=0; i<len; ++i) {
+        checksum += buffer[i];
+    }
     return (int)checksum;
 }
 
-// Send functions
-void minigdbstubSend(const char *data) {
+// User stubs
+static void minigdbstubUsrPutchar(char *c);
+static char minigdbstubUsrGetchar(void);
 
+static void minigdbstubSend(const char *data) {
+    // TODO: Implement
 }
-void minigdbstubUsrPutchar(char *c);
 
-// Recieve functions 
 static char minigdbstubRecv(void) {
     char returnCommand;
-    int goldChecksum, actualChecksum;
+    int goldChecksum, actualChecksum, currentOffset, checksumOffset;
     DynCharBuffer charBuf;
     initDynCharBuffer(&charBuf, 256);
+
     while (1) {
-        int currentOffset, checksumOffset = 0;
+        currentOffset = checksumOffset = 0;
 
         // Get the beginning of the packet data '$'
         while (1) {
@@ -82,15 +86,15 @@ static char minigdbstubRecv(void) {
                 // Read the two checksum digits
                 insertDynCharBuffer(&charBuf, minigdbstubUsrGetchar());
                 insertDynCharBuffer(&charBuf, minigdbstubUsrGetchar());
+                insertDynCharBuffer(&charBuf, 0);
                 break;
             }
             ++currentOffset;
         }
 
         // Compute checksums - Request retransmission if checksum verif. fails
-        goldChecksum = (atoi((const char*)charBuf.buffer[checksumOffset]) * 10) +
-            atoi((const char*)charBuf.buffer[checksumOffset+1]);
-        actualChecksum = minigdbstubComputeChecksum(charBuf.buffer, checksumOffset);
+        goldChecksum = strtol(&charBuf.buffer[checksumOffset], NULL, 16);
+        actualChecksum = minigdbstubComputeChecksum(charBuf.buffer, checksumOffset-1);
         if (goldChecksum != actualChecksum) {
             charBuf.used = 0;
             minigdbstubSend(RESEND_PACKET);
@@ -103,10 +107,9 @@ static char minigdbstubRecv(void) {
         // Free the dynamic char buffer, send ack, and exit
         minigdbstubSend(ACK_PACKET);
         freeDynCharBuffer(&charBuf);
-        return;
+        return returnCommand;
     }
 }
-char minigdbstubUsrGetchar(void);
 
 // Main gdb stub process call
 static void minigdbstubProcess(char *registersRaw, size_t registersLen, int signalNum) {

@@ -1,0 +1,3 @@
+[submodule "external/criterion"]
+	path = external/criterion
+	url = https://github.com/Snaipe/Criterion.git
