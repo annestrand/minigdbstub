@@ -1,6 +1,7 @@
-#include "criterion.h"
-#include "minigdbstub.h"
 #include <stdio.h>
+
+#include "minigdbstub.h"
+#include "gtest/gtest.h"
 
 // Mock getchar
 static char minigdbstubUsrGetchar(void) {
@@ -9,7 +10,7 @@ static char minigdbstubUsrGetchar(void) {
     return mockPacket[i++];
 }
 
-Test(minigdbstub, basic_recv) {
+TEST(minigdbstub, basic_recv) {
     char c = minigdbstubRecv();
-    cr_assert('g' == 'g');
+    EXPECT_EQ(c, 'g');
 }
