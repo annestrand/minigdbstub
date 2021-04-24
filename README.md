@@ -21,3 +21,10 @@ To install Conan (if you don't have it installed already), use the Python3 packa
     $ conan install -if build
     $ cmake . -Bbuild
     $ cmake --build build
+
+## Running tests
+There is a test runner Python script **tr.py** located in the project root:
+
+    $ python3 ./tr.py [optional_test_binary_name]
+
+If no test binary name is given, the test runner script will run through all the tests.

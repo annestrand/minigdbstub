@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Basic dynamic char array utility for reading GDB packets
 #define ALLOC_ASSERT(ptr) do { \
@@ -44,6 +45,10 @@ void freeDynCharBuffer(DynCharBuffer *buf) {
 #define ACK_PACKET      "+$#00"
 #define RESEND_PACKET   "-$#00"
 
+// User stubs
+static void minigdbstubUsrPutchar(char);
+static char minigdbstubUsrGetchar(void);
+
 int minigdbstubComputeChecksum(char *buffer, size_t len) {
     unsigned char checksum = 0;
     for (int i=0; i<len; ++i) {
@@ -52,12 +57,10 @@ int minigdbstubComputeChecksum(char *buffer, size_t len) {
     return (int)checksum;
 }
 
-// User stubs
-static void minigdbstubUsrPutchar(char *c);
-static char minigdbstubUsrGetchar(void);
-
 static void minigdbstubSend(const char *data) {
-    // TODO: Implement
+    for (int i=0; i<strlen(data); ++i) {
+        minigdbstubUsrPutchar(data[i]);
+    }
 }
 
 static char minigdbstubRecv(void) {
@@ -83,7 +86,6 @@ static char minigdbstubRecv(void) {
             if (charBuf.buffer[currentOffset] == '#') {
                 ++currentOffset;
                 checksumOffset = currentOffset;
-                // Read the two checksum digits
                 insertDynCharBuffer(&charBuf, minigdbstubUsrGetchar());
                 insertDynCharBuffer(&charBuf, minigdbstubUsrGetchar());
                 insertDynCharBuffer(&charBuf, 0);
@@ -92,7 +94,8 @@ static char minigdbstubRecv(void) {
             ++currentOffset;
         }
 
-        // Compute checksums - Request retransmission if checksum verif. fails
+        // Compute checksum and compare with expected checksum
+        // Request retransmission if checksum verif. fails
         goldChecksum = strtol(&charBuf.buffer[checksumOffset], NULL, 16);
         actualChecksum = minigdbstubComputeChecksum(charBuf.buffer, checksumOffset-1);
         if (goldChecksum != actualChecksum) {
@@ -104,11 +107,44 @@ static char minigdbstubRecv(void) {
         returnCommand = charBuf.buffer[0];
         // TODO: Process the packet data...
 
-        // Free the dynamic char buffer, send ack, and exit
         minigdbstubSend(ACK_PACKET);
         freeDynCharBuffer(&charBuf);
         return returnCommand;
     }
+}
+
+void minigdbstubSendRegs(char *regs, size_t len) {
+    // TODO: Implement...
+}
+
+void minigdbstubSendSignal(int signalNum) {
+    DynCharBuffer *fmtPacket;
+    fmtPacket = (DynCharBuffer*)malloc(sizeof(DynCharBuffer));
+    initDynCharBuffer(fmtPacket, 32);
+    insertDynCharBuffer(fmtPacket, '+');
+    insertDynCharBuffer(fmtPacket, '$');
+    insertDynCharBuffer(fmtPacket, 'S');
+
+    // Convert signal num to hex char array
+    char itoaBuff[20];
+    snprintf(itoaBuff, sizeof(itoaBuff), "%x", signalNum);
+    int i = 0;
+    while (itoaBuff[i] != 0) {
+        insertDynCharBuffer(fmtPacket, itoaBuff[i]);
+        ++i;
+    }
+    insertDynCharBuffer(fmtPacket, '#');
+
+    // Add the two checksum hex chars
+    char checksumHex[4];
+    int checksum = minigdbstubComputeChecksum(&fmtPacket->buffer[2], i+1);
+    snprintf(checksumHex, sizeof(checksumHex), "%2x", checksum);
+    insertDynCharBuffer(fmtPacket, checksumHex[0]);
+    insertDynCharBuffer(fmtPacket, checksumHex[1]);
+
+    minigdbstubSend((const char*)fmtPacket->buffer);
+    freeDynCharBuffer(fmtPacket);
+    free(fmtPacket);
 }
 
 // Main gdb stub process call
@@ -121,6 +157,7 @@ static void minigdbstubProcess(char *registersRaw, size_t registersLen, int sign
         switch(command) {
             case 'g':   // Read registers
                 // TODO: Implement...
+                minigdbstubSendRegs(registersRaw, registersLen);
                 break;
             case 'G':   // Write registers
                 // TODO: Implement...
@@ -150,7 +187,7 @@ static void minigdbstubProcess(char *registersRaw, size_t registersLen, int sign
                 // TODO: Implement...
                 break;
             case '?':   // Indicate reason why target halted
-                // TODO: Implement...
+                minigdbstubSendSignal(signalNum);
                 break;
             default:    // Command unsupported
                 // TODO: Implement...

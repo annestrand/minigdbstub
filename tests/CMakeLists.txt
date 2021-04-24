@@ -6,5 +6,8 @@ project(minigdbstub_tests)
 include_directories(${CMAKE_SOURCE_DIR})
 
 # Tests
-add_executable(test_basic test_basic.cpp)
-target_link_libraries(test_basic ${CONAN_LIBS})
+add_executable(test_recv test_recv.cpp)
+target_link_libraries(test_recv ${CONAN_LIBS})
+
+add_executable(test_send test_send.cpp)
+target_link_libraries(test_send ${CONAN_LIBS})
