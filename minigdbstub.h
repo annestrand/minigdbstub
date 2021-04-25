@@ -34,6 +34,13 @@ void freeDynCharBuffer(DynCharBuffer *buf) {
     buf->used = buf->size = 0;
 }
 
+// GDB Remote Serial Protocol packet object
+typedef struct {
+    char commandType;
+    DynCharBuffer pktData;
+    char checksum[3];
+} gdbPacket;
+
 // Useful GDB Remote Protocol Info
 // - Packets are in the following form: $<packet-data>#<checksum>
 // - Packet data is a sequence of chars (excluding "#" and "$")
@@ -41,20 +48,38 @@ void freeDynCharBuffer(DynCharBuffer *buf) {
 // - Unless noted, all numbers are represented in hex w/ leading zeros suppressed
 // - Ack = "+"
 // - Request retransmission = "-"
+//
+// --- A few relevant send/recieve packets ---
+// - 'Z0/z0,addr,kind' = [Insert/Remove] software breakpoint at 'addr' of type 'kind'
+// - 'Z1/z1,addr,kind' = [Insert/Remove] hardware breakpoint at 'addr' of type 'kind'
+// - 'm/Maddr,length'  = [Read/Write] length addressable memory units starting at addr
+//      - Replies:
+//          - 'xxx...xx'    = Memory contents in hex
+//          - 'Enn'         = Error where 'nn' is the error number
+// - 'Odata' = Tell GDB to decode the hex 'data' field to ASCII and print to GDB console
 
-#define ACK_PACKET      "+$#00"
-#define RESEND_PACKET   "-$#00"
+#define ACK_PACKET      "+"
+#define RESEND_PACKET   "-"
+#define EMPTY_PACKET    "+$#00"
+#define ERROR_PACKET    "+$E00#96"
+
+#ifndef MINIGDBSTUB_PKT_SIZE
+#define MINIGDBSTUB_PKT_SIZE 256
+#endif
+
+#define HEX_ENCODE_ASCII(in, out) snprintf(out, sizeof(out), "%x", in);
+#define HEX_DECODE_ASCII(in, out) out = strtol(in, NULL, 16);
 
 // User stubs
 static void minigdbstubUsrPutchar(char);
 static char minigdbstubUsrGetchar(void);
 
-int minigdbstubComputeChecksum(char *buffer, size_t len) {
+void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
     unsigned char checksum = 0;
     for (int i=0; i<len; ++i) {
         checksum += buffer[i];
     }
-    return (int)checksum;
+    HEX_ENCODE_ASCII(checksum, outBuf);
 }
 
 static void minigdbstubSend(const char *data) {
@@ -63,18 +88,14 @@ static void minigdbstubSend(const char *data) {
     }
 }
 
-static char minigdbstubRecv(void) {
-    char returnCommand;
-    int goldChecksum, actualChecksum, currentOffset, checksumOffset;
-    DynCharBuffer charBuf;
-    initDynCharBuffer(&charBuf, 256);
-
+static void minigdbstubRecv(gdbPacket *gdbPkt) {
+    int currentOffset = 0;
+    char actualChecksum[3];
+    char c;
     while (1) {
-        currentOffset = checksumOffset = 0;
-
         // Get the beginning of the packet data '$'
         while (1) {
-            char c = minigdbstubUsrGetchar();
+            c = minigdbstubUsrGetchar();
             if (c == '$') {
                 break;
             }
@@ -82,118 +103,150 @@ static char minigdbstubRecv(void) {
 
         // Read packet data until the end '#' - then read the remaining 2 checksum digits
         while (1) {
-            insertDynCharBuffer(&charBuf, minigdbstubUsrGetchar());
-            if (charBuf.buffer[currentOffset] == '#') {
-                ++currentOffset;
-                checksumOffset = currentOffset;
-                insertDynCharBuffer(&charBuf, minigdbstubUsrGetchar());
-                insertDynCharBuffer(&charBuf, minigdbstubUsrGetchar());
-                insertDynCharBuffer(&charBuf, 0);
+            c = minigdbstubUsrGetchar();
+            if (c == '#') {
+                gdbPkt->checksum[0] = minigdbstubUsrGetchar();
+                gdbPkt->checksum[1] = minigdbstubUsrGetchar();
+                gdbPkt->checksum[2] = 0;
+                insertDynCharBuffer(&gdbPkt->pktData, 0);
                 break;
             }
+            insertDynCharBuffer(&gdbPkt->pktData, c);
             ++currentOffset;
         }
 
         // Compute checksum and compare with expected checksum
         // Request retransmission if checksum verif. fails
-        goldChecksum = strtol(&charBuf.buffer[checksumOffset], NULL, 16);
-        actualChecksum = minigdbstubComputeChecksum(charBuf.buffer, checksumOffset-1);
-        if (goldChecksum != actualChecksum) {
-            charBuf.used = 0;
+        minigdbstubComputeChecksum(gdbPkt->pktData.buffer, currentOffset, actualChecksum);
+        if (strcmp(gdbPkt->checksum, actualChecksum) != 0) {
+            gdbPkt->pktData.used = 0;
             minigdbstubSend(RESEND_PACKET);
             continue;
         }
 
-        returnCommand = charBuf.buffer[0];
-        // TODO: Process the packet data...
-
+        gdbPkt->commandType = gdbPkt->pktData.buffer[0];
         minigdbstubSend(ACK_PACKET);
-        freeDynCharBuffer(&charBuf);
-        return returnCommand;
+        return;
     }
 }
 
 void minigdbstubSendRegs(char *regs, size_t len) {
-    // TODO: Implement...
+    DynCharBuffer sendPkt;
+    initDynCharBuffer(&sendPkt, 512);
+    insertDynCharBuffer(&sendPkt, '+');
+    insertDynCharBuffer(&sendPkt, '$');
+
+    for (int i=0; i<len; ++i) {
+        char itoaBuff[3];
+        HEX_ENCODE_ASCII(regs[i] & 0xff, itoaBuff);
+        insertDynCharBuffer(&sendPkt, itoaBuff[0]);
+    }
+
+    // Add the two checksum hex chars
+    char checksumHex[3];
+    minigdbstubComputeChecksum(&sendPkt.buffer[2], len, checksumHex);
+    insertDynCharBuffer(&sendPkt, checksumHex[0]);
+    insertDynCharBuffer(&sendPkt, checksumHex[1]);
+
+    minigdbstubSend((const char*)sendPkt.buffer);
+    freeDynCharBuffer(&sendPkt);
 }
 
 void minigdbstubSendSignal(int signalNum) {
-    DynCharBuffer *fmtPacket;
-    fmtPacket = (DynCharBuffer*)malloc(sizeof(DynCharBuffer));
-    initDynCharBuffer(fmtPacket, 32);
-    insertDynCharBuffer(fmtPacket, '+');
-    insertDynCharBuffer(fmtPacket, '$');
-    insertDynCharBuffer(fmtPacket, 'S');
+    DynCharBuffer sendPkt;
+    initDynCharBuffer(&sendPkt, 32);
+    insertDynCharBuffer(&sendPkt, '+');
+    insertDynCharBuffer(&sendPkt, '$');
+    insertDynCharBuffer(&sendPkt, 'S');
 
     // Convert signal num to hex char array
     char itoaBuff[20];
-    snprintf(itoaBuff, sizeof(itoaBuff), "%x", signalNum);
+    HEX_ENCODE_ASCII(signalNum, itoaBuff);
     int i = 0;
     while (itoaBuff[i] != 0) {
-        insertDynCharBuffer(fmtPacket, itoaBuff[i]);
+        insertDynCharBuffer(&sendPkt, itoaBuff[i]);
         ++i;
     }
-    insertDynCharBuffer(fmtPacket, '#');
+    insertDynCharBuffer(&sendPkt, '#');
 
     // Add the two checksum hex chars
-    char checksumHex[4];
-    int checksum = minigdbstubComputeChecksum(&fmtPacket->buffer[2], i+1);
-    snprintf(checksumHex, sizeof(checksumHex), "%2x", checksum);
-    insertDynCharBuffer(fmtPacket, checksumHex[0]);
-    insertDynCharBuffer(fmtPacket, checksumHex[1]);
+    char checksumHex[3];
+    minigdbstubComputeChecksum(&sendPkt.buffer[2], i+1, checksumHex);
+    insertDynCharBuffer(&sendPkt, checksumHex[0]);
+    insertDynCharBuffer(&sendPkt, checksumHex[1]);
+    insertDynCharBuffer(&sendPkt, 0);
 
-    minigdbstubSend((const char*)fmtPacket->buffer);
-    freeDynCharBuffer(fmtPacket);
-    free(fmtPacket);
+    minigdbstubSend((const char*)sendPkt.buffer);
+    freeDynCharBuffer(&sendPkt);
 }
 
 // Main gdb stub process call
-static void minigdbstubProcess(char *registersRaw, size_t registersLen, int signalNum) {
-    char command;
+static void minigdbstubProcess(char *registersRaw, size_t registersLen, int signalNum, void *usrData) {
+    gdbPacket recvPkt;
+    initDynCharBuffer(&recvPkt.pktData, MINIGDBSTUB_PKT_SIZE);
+    
     while (1) {
         // Poll from GDB until a packet is recieved
-        command = minigdbstubRecv();
+        minigdbstubRecv(&recvPkt);
 
-        switch(command) {
-            case 'g':   // Read registers
-                // TODO: Implement...
+        switch(recvPkt.commandType) {
+            case 'g':   {   // Read registers
                 minigdbstubSendRegs(registersRaw, registersLen);
                 break;
-            case 'G':   // Write registers
+            }
+            case 'G':   {   // Write registers
+                char tmpBuf[3] = {0, 0, 0};
+                int decodedHex;
+                for (int i=0; i<recvPkt.pktData.used-1; ++i) {
+                    tmpBuf[i%2] = recvPkt.pktData.buffer[i+1];
+                    if ((i%2) != 0) {
+                        HEX_DECODE_ASCII(tmpBuf, decodedHex);
+                        registersRaw[i/2] = (char)decodedHex;
+                    }
+                }
+                return;
+            }
+            case 'p':   {   // Read one register
                 // TODO: Implement...
                 break;
-            case 'p':   // Read one register
+            }
+            case 'P':   {   // Write one register
                 // TODO: Implement...
                 break;
-            case 'P':   // Write one register
+            }
+            case 'm':   {   // Read mem
                 // TODO: Implement...
                 break;
-            case 'm':   // Read mem
+            }
+            case 'M':   {   // Write mem
                 // TODO: Implement...
                 break;
-            case 'M':   // Write mem
+            }
+            case 'X':   {   // Write mem (binary)
                 // TODO: Implement...
                 break;
-            case 'X':   // Write mem (binary)
-                // TODO: Implement...
-                break;
-            case 'c':   // Continue
+            }
+            case 'c':   {   // Continue
                 // TODO: Implement...
                 return;
-            case 's':   // Step
+            }
+            case 's':   {   // Step
                 // TODO: Implement...
                 return;
-            case 'F':   // File I/O extension
-                // TODO: Implement...
-                break;
-            case '?':   // Indicate reason why target halted
+            }
+            case '?':   {   // Indicate reason why target halted
                 minigdbstubSendSignal(signalNum);
                 break;
-            default:    // Command unsupported
+            }
+            default:    {   // Command unsupported
                 // TODO: Implement...
                 break;
+            }
         }
     }
+
+    // Cleanup packet mem
+    freeDynCharBuffer(&recvPkt.pktData);
 }
 
 #endif // MINIGDBSTUB_H
