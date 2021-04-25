@@ -4,6 +4,7 @@ project(minigdbstub_tests)
 
 # Include minigdbstub header
 include_directories(${CMAKE_SOURCE_DIR})
+add_definitions(-DMINIGDBSTUB_DEBUG)
 
 # Tests
 add_executable(test_recv test_recv.cpp)

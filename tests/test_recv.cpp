@@ -15,6 +15,7 @@ std::vector<const char*> g_mockPackets = {
     "+$c#63",
     "+$Ga700467f#46"
 };
+std::vector<char> g_mockPutcharBuf; 
 unsigned int g_packetChar;
 const char *g_mockPacket;
 
@@ -25,7 +26,7 @@ static char minigdbstubUsrGetchar(void) {
 
 // Mock putchar
 static void minigdbstubUsrPutchar(char c) {
-    GTEST_COUT << "Recieved char: " << c << std::endl;
+    g_mockPutcharBuf.push_back(c);
     return;
 }
 
@@ -44,10 +45,46 @@ TEST(minigdbstub, test_recvs) {
     }
 }
 
+// Send regs to mock GDB
+TEST(minigdbstub, test_send_regs) {
+    int regs[8] = {11,4,5,6,55,34,23,16};
+    char *charRegs = (char*)regs;
+    g_mockPutcharBuf.clear();
+    minigdbstubSendRegs((char*)regs, sizeof(regs));
+    for (int i=0; i<sizeof(regs); ++i) {
+        char itoaBuff[3];
+        HEX_ENCODE_ASCII(charRegs[i], itoaBuff);
+        for (int j=0; j<2; ++j) {
+            itoaBuff[j] = (itoaBuff[j] == 0) ? ('0') : (itoaBuff[j]);
+        }
+        if (itoaBuff[1] == '0') {
+            EXPECT_EQ(itoaBuff[1], g_mockPutcharBuf[i*2]);
+            EXPECT_EQ(itoaBuff[0], g_mockPutcharBuf[(i*2)+1]);
+        }
+        else {
+            EXPECT_EQ(itoaBuff[0], g_mockPutcharBuf[i*2]);
+            EXPECT_EQ(itoaBuff[1], g_mockPutcharBuf[(i*2)+1]);
+        }
+    }
+}
+
 TEST(minigdbstub, test_write_regs) {
-    g_mockPacket = g_mockPackets[3];
-    g_packetChar = 0;
-    int regs[8];
-    minigdbstubProcess((char*)regs, sizeof(regs), 5, NULL);
-    EXPECT_EQ(regs[0], 0x7f4600a7);
+    int regs[8] = {1,1,1,1,1,1,1,1};
+    char *charRegs = (char*)regs;
+    int expectedResults[8] = {11,4,5,6,55,34,23,16};
+    char writeRegsData[] = {
+        '0','b', '0','0', '0','0', '0','0', // regs[0] = 11
+        '0','4', '0','0', '0','0', '0','0', // regs[1] = 4
+        '0','5', '0','0', '0','0', '0','0', // regs[2] = 5
+        '0','6', '0','0', '0','0', '0','0', // regs[3] = 6
+        '3','7', '0','0', '0','0', '0','0', // regs[4] = 55
+        '2','2', '0','0', '0','0', '0','0', // regs[5] = 34
+        '1','7', '0','0', '0','0', '0','0', // regs[6] = 23
+        '1','0', '0','0', '0','0', '0','0', // regs[7] = 16
+        0
+    };
+    minigdbstubWriteRegs(writeRegsData, sizeof(writeRegsData), charRegs);
+    for (int i=0; i<sizeof(regs)/sizeof(int); ++i) {
+        EXPECT_EQ(expectedResults[i], regs[i]);
+    }
 }

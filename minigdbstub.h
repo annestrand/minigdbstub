@@ -13,13 +13,13 @@ typedef struct {
     size_t used;
     size_t size;
 } DynCharBuffer;
-void initDynCharBuffer(DynCharBuffer *buf, size_t startSize) {
+static void initDynCharBuffer(DynCharBuffer *buf, size_t startSize) {
     buf->buffer = (char*)malloc(startSize * sizeof(char));
     ALLOC_ASSERT(buf->buffer);
     buf->used = 0;
     buf->size = startSize;
 }
-void insertDynCharBuffer(DynCharBuffer *buf, char item) {
+static void insertDynCharBuffer(DynCharBuffer *buf, char item) {
     // Realloc if buffer is full - double the array size
     if (buf->used == buf->size) {
         buf->size *= 2;
@@ -28,7 +28,7 @@ void insertDynCharBuffer(DynCharBuffer *buf, char item) {
     }
     buf->buffer[buf->used++] = item;
 }
-void freeDynCharBuffer(DynCharBuffer *buf) {
+static void freeDynCharBuffer(DynCharBuffer *buf) {
     free(buf->buffer);
     buf->buffer = NULL;
     buf->used = buf->size = 0;
@@ -58,6 +58,7 @@ typedef struct {
 //          - 'Enn'         = Error where 'nn' is the error number
 // - 'Odata' = Tell GDB to decode the hex 'data' field to ASCII and print to GDB console
 
+// Basic packets
 #define ACK_PACKET      "+"
 #define RESEND_PACKET   "-"
 #define EMPTY_PACKET    "+$#00"
@@ -67,6 +68,13 @@ typedef struct {
 #define MINIGDBSTUB_PKT_SIZE 256
 #endif
 
+// Debugging macros
+#ifdef MINIGDBSTUB_DEBUG
+#define MINIGDBSTUB_LOG(format, ...) do { fprintf(stderr, "[minigdbstub]: " format, __VA_ARGS__); } while(0)
+#else
+#define MINIGDBSTUB_LOG(format, ...)
+#endif
+
 #define HEX_ENCODE_ASCII(in, out) snprintf(out, sizeof(out), "%x", in);
 #define HEX_DECODE_ASCII(in, out) out = strtol(in, NULL, 16);
 
@@ -74,7 +82,7 @@ typedef struct {
 static void minigdbstubUsrPutchar(char);
 static char minigdbstubUsrGetchar(void);
 
-void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
+static void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
     unsigned char checksum = 0;
     for (int i=0; i<len; ++i) {
         checksum += buffer[i];
@@ -83,6 +91,7 @@ void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
 }
 
 static void minigdbstubSend(const char *data) {
+    MINIGDBSTUB_LOG("GDB <--- minigdbstub : packet = %s\n", data);
     for (int i=0; i<strlen(data); ++i) {
         minigdbstubUsrPutchar(data[i]);
     }
@@ -125,34 +134,51 @@ static void minigdbstubRecv(gdbPacket *gdbPkt) {
         }
 
         gdbPkt->commandType = gdbPkt->pktData.buffer[0];
+        MINIGDBSTUB_LOG("GDB ---> minigdbstub : packet = %s%s%s%s\n", 
+            "$", gdbPkt->pktData.buffer, "#", gdbPkt->checksum);
         minigdbstubSend(ACK_PACKET);
         return;
     }
 }
 
-void minigdbstubSendRegs(char *regs, size_t len) {
+static void minigdbstubWriteRegs(char* data, size_t len, char *registersRaw) {
+    char tmpBuf[3] = {0, 0, 0};
+    int decodedHex;
+    for (int i=0; i<len; ++i) {
+        tmpBuf[i%2] = data[i];
+        if ((i%2) != 0) {
+            HEX_DECODE_ASCII(tmpBuf, decodedHex);
+            registersRaw[i/2] = (char)decodedHex;
+        }
+    }
+}
+
+static void minigdbstubSendRegs(char *regs, size_t len) {
     DynCharBuffer sendPkt;
     initDynCharBuffer(&sendPkt, 512);
-    insertDynCharBuffer(&sendPkt, '+');
-    insertDynCharBuffer(&sendPkt, '$');
 
     for (int i=0; i<len; ++i) {
         char itoaBuff[3];
-        HEX_ENCODE_ASCII(regs[i] & 0xff, itoaBuff);
-        insertDynCharBuffer(&sendPkt, itoaBuff[0]);
+        HEX_ENCODE_ASCII(regs[i], itoaBuff);
+        for (int j=0; j<2; ++j) {
+            itoaBuff[j] = (itoaBuff[j] == 0) ? ('0') : (itoaBuff[j]);
+        }
+        if (itoaBuff[1] == '0') {
+            insertDynCharBuffer(&sendPkt, itoaBuff[1]);
+            insertDynCharBuffer(&sendPkt, itoaBuff[0]);
+        }
+        else {
+            insertDynCharBuffer(&sendPkt, itoaBuff[0]);
+            insertDynCharBuffer(&sendPkt, itoaBuff[1]);
+        }
     }
-
-    // Add the two checksum hex chars
-    char checksumHex[3];
-    minigdbstubComputeChecksum(&sendPkt.buffer[2], len, checksumHex);
-    insertDynCharBuffer(&sendPkt, checksumHex[0]);
-    insertDynCharBuffer(&sendPkt, checksumHex[1]);
+    insertDynCharBuffer(&sendPkt, 0);
 
     minigdbstubSend((const char*)sendPkt.buffer);
     freeDynCharBuffer(&sendPkt);
 }
 
-void minigdbstubSendSignal(int signalNum) {
+static void minigdbstubSendSignal(int signalNum) {
     DynCharBuffer sendPkt;
     initDynCharBuffer(&sendPkt, 32);
     insertDynCharBuffer(&sendPkt, '+');
@@ -195,16 +221,8 @@ static void minigdbstubProcess(char *registersRaw, size_t registersLen, int sign
                 break;
             }
             case 'G':   {   // Write registers
-                char tmpBuf[3] = {0, 0, 0};
-                int decodedHex;
-                for (int i=0; i<recvPkt.pktData.used-1; ++i) {
-                    tmpBuf[i%2] = recvPkt.pktData.buffer[i+1];
-                    if ((i%2) != 0) {
-                        HEX_DECODE_ASCII(tmpBuf, decodedHex);
-                        registersRaw[i/2] = (char)decodedHex;
-                    }
-                }
-                return;
+                minigdbstubWriteRegs(recvPkt.pktData.buffer, recvPkt.pktData.size-1, registersRaw);
+                break;
             }
             case 'p':   {   // Read one register
                 // TODO: Implement...
@@ -236,7 +254,7 @@ static void minigdbstubProcess(char *registersRaw, size_t registersLen, int sign
             }
             case '?':   {   // Indicate reason why target halted
                 minigdbstubSendSignal(signalNum);
-                break;
+                break;;
             }
             default:    {   // Command unsupported
                 // TODO: Implement...

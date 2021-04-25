@@ -13,7 +13,6 @@ std::vector<char> g_recvPacket;
 
 // Mock putchar
 static void minigdbstubUsrPutchar(char c) {
-    GTEST_COUT << "Recieved char: " << c << std::endl;
     g_recvPacket.push_back(c);
 }
 
