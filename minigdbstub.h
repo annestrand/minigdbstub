@@ -41,6 +41,15 @@ typedef struct {
     char checksum[3];
 } gdbPacket;
 
+// minigdbstub process call object
+typedef struct {
+    char    *regs;      // Pointer to register array
+    size_t  regsSize;   // Size of register array in bytes
+    size_t  regsCount;  // Total number of registers
+    int     signalNum;  // Signal that can be sent to GDB on certain operations
+    void    *usrData;   // Optional handle to opaque user data
+} mgdbProcObj;
+
 // Useful GDB Remote Protocol Info
 // - Packets are in the following form: $<packet-data>#<checksum>
 // - Packet data is a sequence of chars (excluding "#" and "$")
@@ -153,6 +162,22 @@ static void minigdbstubWriteRegs(char* data, size_t len, char *registersRaw) {
     }
 }
 
+static void minigdbstubWriteReg(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
+    int index, valOffset = 0;
+    size_t regWidth = mgdbObj->regsSize / mgdbObj->regsCount;
+    for (int i=0; recvPkt->pktData.buffer[i] != 0; ++i) {
+        if (recvPkt->pktData.buffer[i] == '=') {
+            recvPkt->pktData.buffer[i] = 0;
+            ++valOffset;
+            break;
+        }
+        ++valOffset;
+    }
+    HEX_DECODE_ASCII(&recvPkt->pktData.buffer[1], index);
+    minigdbstubWriteRegs(&recvPkt->pktData.buffer[valOffset],
+        regWidth, &mgdbObj->regs[index * regWidth]);
+}
+
 static void minigdbstubSendRegs(char *regs, size_t len) {
     DynCharBuffer sendPkt;
     initDynCharBuffer(&sendPkt, 512);
@@ -176,6 +201,13 @@ static void minigdbstubSendRegs(char *regs, size_t len) {
 
     minigdbstubSend((const char*)sendPkt.buffer);
     freeDynCharBuffer(&sendPkt);
+}
+
+static void minigdbstubSendReg(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
+    int index;
+    size_t regWidth = mgdbObj->regsSize / mgdbObj->regsCount;
+    HEX_DECODE_ASCII(&recvPkt->pktData.buffer[1], index);
+    minigdbstubSendRegs(&mgdbObj->regs[index * regWidth], regWidth);
 }
 
 static void minigdbstubSendSignal(int signalNum) {
@@ -207,7 +239,7 @@ static void minigdbstubSendSignal(int signalNum) {
 }
 
 // Main gdb stub process call
-static void minigdbstubProcess(char *registersRaw, size_t registersLen, int signalNum, void *usrData) {
+static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
     gdbPacket recvPkt;
     initDynCharBuffer(&recvPkt.pktData, MINIGDBSTUB_PKT_SIZE);
     
@@ -217,19 +249,19 @@ static void minigdbstubProcess(char *registersRaw, size_t registersLen, int sign
 
         switch(recvPkt.commandType) {
             case 'g':   {   // Read registers
-                minigdbstubSendRegs(registersRaw, registersLen);
+                minigdbstubSendRegs(mgdbObj->regs, mgdbObj->regsSize);
                 break;
             }
             case 'G':   {   // Write registers
-                minigdbstubWriteRegs(recvPkt.pktData.buffer, recvPkt.pktData.size-1, registersRaw);
+                minigdbstubWriteRegs(recvPkt.pktData.buffer, recvPkt.pktData.size-1, mgdbObj->regs);
                 break;
             }
             case 'p':   {   // Read one register
-                // TODO: Implement...
+                minigdbstubSendReg(mgdbObj, &recvPkt);
                 break;
             }
             case 'P':   {   // Write one register
-                // TODO: Implement...
+                minigdbstubWriteReg(mgdbObj, &recvPkt);
                 break;
             }
             case 'm':   {   // Read mem
@@ -253,11 +285,11 @@ static void minigdbstubProcess(char *registersRaw, size_t registersLen, int sign
                 return;
             }
             case '?':   {   // Indicate reason why target halted
-                minigdbstubSendSignal(signalNum);
+                minigdbstubSendSignal(mgdbObj->signalNum);
                 break;;
             }
             default:    {   // Command unsupported
-                // TODO: Implement...
+                minigdbstubSend(EMPTY_PACKET);
                 break;
             }
         }
