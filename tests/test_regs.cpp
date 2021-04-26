@@ -23,9 +23,9 @@ TEST(minigdbstub, test_g) {
     g_putcharPktHandle->clear();
     minigdbstubSendRegs(mgdbObj.regs, mgdbObj.regsSize);
 
-    for (int i=0; i<regSize; ++i) {
+    for (size_t i=0; i<regSize; ++i) {
         char itoaBuff[3];
-        HEX_ENCODE_ASCII(mgdbObj.regs[i], itoaBuff);
+        HEX_ENCODE_ASCII(mgdbObj.regs[i], 3, itoaBuff);
         for (int j=0; j<2; ++j) {
             itoaBuff[j] = (itoaBuff[j] == 0) ? ('0') : (itoaBuff[j]);
         }
@@ -56,7 +56,7 @@ TEST(minigdbstub, test_G) {
     int regs2[8] = {1,1,1,1,1,1,1,1};
 
     minigdbstubWriteRegs(charRegs, (sizeof(charRegs))-1, (char*)regs2);
-    for (int i=0; i<sizeof(expectedResults)/sizeof(int); i++) {
+    for (size_t i=0; i<sizeof(expectedResults)/sizeof(int); i++) {
         EXPECT_EQ(expectedResults[i], regs2[i]);
     }
 }

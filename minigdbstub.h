@@ -84,24 +84,26 @@ typedef struct {
 #define MINIGDBSTUB_LOG(format, ...)
 #endif
 
-#define HEX_ENCODE_ASCII(in, out) snprintf(out, sizeof(out), "%x", in);
+#define HEX_ENCODE_ASCII(in, len, out) snprintf(out, len, "%x", in);
 #define HEX_DECODE_ASCII(in, out) out = strtol(in, NULL, 16);
 
 // User stubs
 static void minigdbstubUsrPutchar(char);
 static char minigdbstubUsrGetchar(void);
+static void minigdbstubUsrWriteMem(size_t addr, unsigned char data, void *usrData);
+static unsigned char minigdbstubUsrReadMem(size_t addr, void *usrData);
 
 static void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
     unsigned char checksum = 0;
-    for (int i=0; i<len; ++i) {
+    for (size_t i=0; i<len; ++i) {
         checksum += buffer[i];
     }
-    HEX_ENCODE_ASCII(checksum, outBuf);
+    HEX_ENCODE_ASCII(checksum, 3, outBuf);
 }
 
 static void minigdbstubSend(const char *data) {
     MINIGDBSTUB_LOG("GDB <--- minigdbstub : packet = %s\n", data);
-    for (int i=0; i<strlen(data); ++i) {
+    for (size_t i=0; i<strlen(data); ++i) {
         minigdbstubUsrPutchar(data[i]);
     }
 }
@@ -153,7 +155,7 @@ static void minigdbstubRecv(gdbPacket *gdbPkt) {
 static void minigdbstubWriteRegs(char* data, size_t len, char *registersRaw) {
     char tmpBuf[3] = {0, 0, 0};
     int decodedHex;
-    for (int i=0; i<len; ++i) {
+    for (size_t i=0; i<len; ++i) {
         tmpBuf[i%2] = data[i];
         if ((i%2) != 0) {
             HEX_DECODE_ASCII(tmpBuf, decodedHex);
@@ -182,9 +184,9 @@ static void minigdbstubSendRegs(char *regs, size_t len) {
     DynCharBuffer sendPkt;
     initDynCharBuffer(&sendPkt, 512);
 
-    for (int i=0; i<len; ++i) {
+    for (size_t i=0; i<len; ++i) {
         char itoaBuff[3];
-        HEX_ENCODE_ASCII(regs[i], itoaBuff);
+        HEX_ENCODE_ASCII(regs[i], 3, itoaBuff);
         for (int j=0; j<2; ++j) {
             itoaBuff[j] = (itoaBuff[j] == 0) ? ('0') : (itoaBuff[j]);
         }
@@ -210,6 +212,93 @@ static void minigdbstubSendReg(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
     minigdbstubSendRegs(&mgdbObj->regs[index * regWidth], regWidth);
 }
 
+static void minigdbstubWriteMem(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
+    size_t address, length;
+    int lengthOffset = 0;
+    int valOffset = 0;
+
+    // Grab the length offset
+    for (int i=0; recvPkt->pktData.buffer[i] != 0; ++i) {
+        if ((recvPkt->pktData.buffer[i] == ',')     ||
+                (recvPkt->pktData.buffer[i] == ';') ||
+                    (recvPkt->pktData.buffer[i] == ':')) {
+            recvPkt->pktData.buffer[i] = 0;
+            ++lengthOffset;
+            valOffset = lengthOffset;
+            break;
+        }
+        ++lengthOffset;
+    }
+    // Grab the data value offset
+    for (int i=0; recvPkt->pktData.buffer[i] != 0; ++i) {
+        if ((recvPkt->pktData.buffer[i] == ',')     ||
+                (recvPkt->pktData.buffer[i] == ';') ||
+                    (recvPkt->pktData.buffer[i] == ':')) {
+            recvPkt->pktData.buffer[i] = 0;
+            ++valOffset;
+            break;
+        }
+        ++valOffset;
+    }
+    HEX_DECODE_ASCII(&recvPkt->pktData.buffer[1], address);
+    HEX_DECODE_ASCII(&recvPkt->pktData.buffer[lengthOffset], length);
+
+    // Call user write memory handler
+    for (size_t i=0; i<length; ++i) {
+        int decodedVal;
+        char atoiBuf[3] = {0,0,0};
+        atoiBuf[0] = recvPkt->pktData.buffer[valOffset+(i*2)];
+        atoiBuf[1] = recvPkt->pktData.buffer[valOffset+(i*2)+1];
+        HEX_DECODE_ASCII(atoiBuf, decodedVal);
+        minigdbstubUsrWriteMem(address+i, (unsigned char)decodedVal, mgdbObj->usrData);
+    }
+
+    // Send ACK to GDB
+    minigdbstubSend(ACK_PACKET);
+}
+
+static void minigdbstubReadMem(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
+    size_t address, length;
+    int valOffset = 0;
+    for (int i=0; recvPkt->pktData.buffer[i] != 0; ++i) {
+        if ((recvPkt->pktData.buffer[i] == ',')     ||
+                (recvPkt->pktData.buffer[i] == ';') ||
+                    (recvPkt->pktData.buffer[i] == ':')) {
+            recvPkt->pktData.buffer[i] = 0;
+            ++valOffset;
+            break;
+        }
+        ++valOffset;
+    }
+    HEX_DECODE_ASCII(&recvPkt->pktData.buffer[1], address);
+    HEX_DECODE_ASCII(&recvPkt->pktData.buffer[valOffset], length);
+
+    // Alloc a packet w/ the requested data to send as a response to GDB
+    DynCharBuffer memBuf;
+    initDynCharBuffer(&memBuf, length);
+
+    // Call user read memory handler
+    for (size_t i=0; i<length; ++i) {
+        char itoaBuff[3];
+        unsigned char c = minigdbstubUsrReadMem(address+i, mgdbObj->usrData);
+        HEX_ENCODE_ASCII(c, 3, itoaBuff);
+        for (int j=0; j<2; ++j) {
+            itoaBuff[j] = (itoaBuff[j] == 0) ? ('0') : (itoaBuff[j]);
+        }
+        if (itoaBuff[1] == '0') {
+            insertDynCharBuffer(&memBuf, itoaBuff[1]);
+            insertDynCharBuffer(&memBuf, itoaBuff[0]);
+        }
+        else {
+            insertDynCharBuffer(&memBuf, itoaBuff[0]);
+            insertDynCharBuffer(&memBuf, itoaBuff[1]);
+        }
+    }
+
+    minigdbstubSend((const char*)memBuf.buffer);
+    freeDynCharBuffer(&memBuf);
+}
+
 static void minigdbstubSendSignal(int signalNum) {
     DynCharBuffer sendPkt;
     initDynCharBuffer(&sendPkt, 32);
@@ -219,7 +308,7 @@ static void minigdbstubSendSignal(int signalNum) {
 
     // Convert signal num to hex char array
     char itoaBuff[20];
-    HEX_ENCODE_ASCII(signalNum, itoaBuff);
+    HEX_ENCODE_ASCII(signalNum, 20, itoaBuff);
     int i = 0;
     while (itoaBuff[i] != 0) {
         insertDynCharBuffer(&sendPkt, itoaBuff[i]);
@@ -264,12 +353,12 @@ static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
                 minigdbstubWriteReg(mgdbObj, &recvPkt);
                 break;
             }
-            case 'm':   {   // Read mem
-                // TODO: Implement...
+            case 'm':   {   // Read mem - TODO: Endianess???
+                minigdbstubReadMem(mgdbObj, &recvPkt);
                 break;
             }
-            case 'M':   {   // Write mem
-                // TODO: Implement...
+            case 'M':   {   // Write mem - TODO: Endianess???
+                minigdbstubWriteMem(mgdbObj, &recvPkt);
                 break;
             }
             case 'X':   {   // Write mem (binary)
