@@ -92,6 +92,8 @@ static void minigdbstubUsrPutchar(char);
 static char minigdbstubUsrGetchar(void);
 static void minigdbstubUsrWriteMem(size_t addr, unsigned char data, void *usrData);
 static unsigned char minigdbstubUsrReadMem(size_t addr, void *usrData);
+static void minigdbstubUsrContinue(void *usrData);
+static void minigdbstubUsrStep(void *usrData);
 
 static void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
     unsigned char checksum = 0;
@@ -361,16 +363,12 @@ static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
                 minigdbstubWriteMem(mgdbObj, &recvPkt);
                 break;
             }
-            case 'X':   {   // Write mem (binary)
-                // TODO: Implement...
-                break;
-            }
             case 'c':   {   // Continue
-                // TODO: Implement...
+                minigdbstubUsrContinue(mgdbObj->usrData);
                 return;
             }
             case 's':   {   // Step
-                // TODO: Implement...
+                minigdbstubUsrStep(mgdbObj->usrData);
                 return;
             }
             case '?':   {   // Indicate reason why target halted
