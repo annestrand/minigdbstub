@@ -101,6 +101,12 @@ static void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
         checksum += buffer[i];
     }
     HEX_ENCODE_ASCII(checksum, 3, outBuf);
+
+    // If the value is single digit
+    if (outBuf[1] == 0) {
+        outBuf[1] = outBuf[0];
+        outBuf[0] = '0';
+    }
 }
 
 static void minigdbstubSend(const char *data, void *usrData) {
