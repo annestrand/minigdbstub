@@ -345,10 +345,10 @@ static void minigdbstubSendSignal(mgdbProcObj *mgdbObj) {
 
 // Main gdb stub process call
 static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
-    gdbPacket recvPkt;
-    initDynCharBuffer(&recvPkt.pktData, MINIGDBSTUB_PKT_SIZE);
-    
     while (1) {
+        gdbPacket recvPkt;
+        initDynCharBuffer(&recvPkt.pktData, MINIGDBSTUB_PKT_SIZE);
+
         // Poll from GDB until a packet is recieved
         minigdbstubRecv(mgdbObj, &recvPkt);
 
@@ -394,10 +394,10 @@ static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
                 break;
             }
         }
-    }
 
-    // Cleanup packet mem
-    freeDynCharBuffer(&recvPkt.pktData);
+        // Cleanup packet mem
+        freeDynCharBuffer(&recvPkt.pktData);
+    }
 }
 
 #endif // MINIGDBSTUB_H
