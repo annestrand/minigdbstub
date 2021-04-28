@@ -31,10 +31,11 @@ TEST(minigdbstub, test_recvs) {
         std::vector<char> testBuff2;
         g_putcharPktHandle = &testBuff2;
 
+        mgdbProcObj procObj;
         gdbPacket gdbPkt;
         initDynCharBuffer(&gdbPkt.pktData, MINIGDBSTUB_PKT_SIZE);
 
-        minigdbstubRecv(&gdbPkt);
+        minigdbstubRecv(&procObj, &gdbPkt);
 
         EXPECT_EQ(gdbPkt.commandType, packet[2]);
         freeDynCharBuffer(&gdbPkt.pktData);

@@ -26,17 +26,21 @@ TEST(minigdbstub, basic_signals) {
 
     // Test some signals
     GTEST_COUT << "Testing SIGTRAP...\n";
-    minigdbstubSendSignal(SIGTRAP);
+    mgdbProcObj testObj;
+    testObj.signalNum = SIGTRAP;
+    minigdbstubSendSignal(&testObj);
     cmpCharArrays(goldSigtrap, testBuff.data(), sizeof(goldSigtrap)-1);
     testBuff.clear();
 
     GTEST_COUT << "Testing SIGINT...\n";
-    minigdbstubSendSignal(SIGINT);
+    testObj.signalNum = SIGINT;
+    minigdbstubSendSignal(&testObj);
     cmpCharArrays(goldSigint, testBuff.data(), sizeof(goldSigint)-1);
     testBuff.clear();
 
     GTEST_COUT << "Testing SIGBUS...\n";
-    minigdbstubSendSignal(SIGBUS);
+    testObj.signalNum = SIGBUS;
+    minigdbstubSendSignal(&testObj);
     cmpCharArrays(goldSigbus, testBuff.data(), sizeof(goldSigbus)-1);
     testBuff.clear();
 }

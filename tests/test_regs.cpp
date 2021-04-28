@@ -21,7 +21,7 @@ TEST(minigdbstub, test_g) {
     std::vector<char> testVec;
     g_putcharPktHandle = &testVec;
     g_putcharPktHandle->clear();
-    minigdbstubSendRegs(mgdbObj.regs, mgdbObj.regsSize);
+    minigdbstubSendRegs(&mgdbObj);
 
     for (size_t i=0; i<regSize; ++i) {
         char itoaBuff[3];
@@ -55,7 +55,14 @@ TEST(minigdbstub, test_G) {
     int expectedResults[8] = {11,4,5,6,55,34,23,16};
     int regs2[8] = {1,1,1,1,1,1,1,1};
 
-    minigdbstubWriteRegs(charRegs, (sizeof(charRegs))-1, (char*)regs2);
+    gdbPacket recvPkt;
+    recvPkt.pktData.buffer = charRegs;
+    recvPkt.pktData.size = sizeof(charRegs);
+
+    mgdbProcObj procObj;
+    procObj.regs = (char*)regs2;
+
+    minigdbstubWriteRegs(&procObj, &recvPkt);
     for (size_t i=0; i<sizeof(expectedResults)/sizeof(int); i++) {
         EXPECT_EQ(expectedResults[i], regs2[i]);
     }
