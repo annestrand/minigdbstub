@@ -38,17 +38,13 @@ TEST(minigdbstub, test_m) {
     for (int i=0; i<4; ++i) {
         char itoaBuff[3];
         HEX_ENCODE_ASCII(dummyMem[i+8], 3, itoaBuff);
-        for (int j=0; j<2; ++j) {
-            itoaBuff[j] = (itoaBuff[j] == 0) ? ('0') : (itoaBuff[j]);
+        // Swap if single digit
+        if (itoaBuff[1] == 0) {
+            itoaBuff[1] = itoaBuff[0];
+            itoaBuff[0] = '0';
         }
-        if (itoaBuff[1] == '0') {
-            EXPECT_EQ(itoaBuff[1], (*g_putcharPktHandle)[i*2]);
-            EXPECT_EQ(itoaBuff[0], (*g_putcharPktHandle)[(i*2)+1]);
-        }
-        else {
-            EXPECT_EQ(itoaBuff[0], (*g_putcharPktHandle)[i*2]);
-            EXPECT_EQ(itoaBuff[1], (*g_putcharPktHandle)[(i*2)+1]);
-        }
+        EXPECT_EQ(itoaBuff[0], (*g_putcharPktHandle)[(i*2)+1]);
+        EXPECT_EQ(itoaBuff[1], (*g_putcharPktHandle)[(i*2)+2]);
     }
     
     freeDynCharBuffer(&mockPkt.pktData);

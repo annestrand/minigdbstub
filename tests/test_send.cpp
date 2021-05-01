@@ -16,9 +16,9 @@ static void cmpCharArrays(char *arr1, char *arr2, size_t size) {
 // --- Tests ---
 
 TEST(minigdbstub, basic_signals) {
-    char goldSigtrap[] = "+$S5#88";
-    char goldSigint[]  = "+$S2#85";
-    char goldSigbus[]  = "+$S7#8a";
+    char goldSigtrap[] = "+$S05#b8";
+    char goldSigint[]  = "+$S02#b5";
+    char goldSigbus[]  = "+$S07#ba";
 
     // Create putchar buffer
     std::vector<char> testBuff;
@@ -26,7 +26,7 @@ TEST(minigdbstub, basic_signals) {
 
     // Test some signals
     GTEST_COUT << "Testing SIGTRAP...\n";
-    mgdbProcObj testObj;
+    mgdbProcObj testObj = {0};
     testObj.signalNum = SIGTRAP;
     minigdbstubSendSignal(&testObj);
     cmpCharArrays(goldSigtrap, testBuff.data(), sizeof(goldSigtrap)-1);

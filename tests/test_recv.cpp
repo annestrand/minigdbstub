@@ -31,7 +31,7 @@ TEST(minigdbstub, test_recvs) {
         std::vector<char> testBuff2;
         g_putcharPktHandle = &testBuff2;
 
-        mgdbProcObj procObj;
+        mgdbProcObj procObj = {0};
         gdbPacket gdbPkt;
         initDynCharBuffer(&gdbPkt.pktData, MINIGDBSTUB_PKT_SIZE);
 

@@ -221,7 +221,7 @@ static void minigdbstubSendRegs(mgdbProcObj *mgdbObj) {
 static void minigdbstubSendReg(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
     int index;
     size_t regWidth = mgdbObj->regsSize / mgdbObj->regsCount;
-    HEX_DECODE_ASCII(&recvPkt->pktData.buffer[1], index);
+    HEX_DECODE_ASCII(&recvPkt->pktData.buffer[2], index);
     
     mgdbProcObj tmpProcObj = *mgdbObj;
     tmpProcObj.regsCount = 1;
@@ -334,14 +334,14 @@ static void minigdbstubSendSignal(mgdbProcObj *mgdbObj) {
     insertDynCharBuffer(&sendPkt, 'S');
 
     // Convert signal num to hex char array
-    char itoaBuff[8];
+    char itoaBuff[8] = {0,0,0,0,0,0,0,0};
     HEX_ENCODE_ASCII(mgdbObj->signalNum, 8, itoaBuff);
 
-    // Pad upper hex digit w/ ASCII zero if single digit
+    // Swap if single digit
     if (itoaBuff[1] == 0) {
-        itoaBuff[1] = '0';
+        itoaBuff[1] = itoaBuff[0];
+        itoaBuff[0] = '0';
     }
-    itoaBuff[2] = 0;
 
     int bufferPtr = 0;
     while (itoaBuff[bufferPtr] != 0) {
@@ -390,11 +390,11 @@ static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
                 minigdbstubWriteReg(mgdbObj, &recvPkt);
                 break;
             }
-            case 'm':   {   // Read mem - TODO: Endianess???
+            case 'm':   {   // Read mem
                 minigdbstubReadMem(mgdbObj, &recvPkt);
                 break;
             }
-            case 'M':   {   // Write mem - TODO: Endianess???
+            case 'M':   {   // Write mem
                 minigdbstubWriteMem(mgdbObj, &recvPkt);
                 break;
             }

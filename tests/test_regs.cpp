@@ -26,17 +26,13 @@ TEST(minigdbstub, test_g) {
     for (size_t i=0; i<regSize; ++i) {
         char itoaBuff[3];
         HEX_ENCODE_ASCII(mgdbObj.regs[i], 3, itoaBuff);
-        for (int j=0; j<2; ++j) {
-            itoaBuff[j] = (itoaBuff[j] == 0) ? ('0') : (itoaBuff[j]);
+        // Swap if single digit
+        if (itoaBuff[1] == 0) {
+            itoaBuff[1] = itoaBuff[0];
+            itoaBuff[0] = '0';
         }
-        if (itoaBuff[1] == '0') {
-            EXPECT_EQ(itoaBuff[1], (*g_putcharPktHandle)[i*2]);
-            EXPECT_EQ(itoaBuff[0], (*g_putcharPktHandle)[(i*2)+1]);
-        }
-        else {
-            EXPECT_EQ(itoaBuff[0], (*g_putcharPktHandle)[i*2]);
-            EXPECT_EQ(itoaBuff[1], (*g_putcharPktHandle)[(i*2)+1]);
-        }
+        EXPECT_EQ(itoaBuff[0], (*g_putcharPktHandle)[(i*2)+1]);
+        EXPECT_EQ(itoaBuff[1], (*g_putcharPktHandle)[(i*2)+2]);
     }
 }
 
@@ -59,7 +55,7 @@ TEST(minigdbstub, test_G) {
     recvPkt.pktData.buffer = charRegs;
     recvPkt.pktData.size = sizeof(charRegs);
 
-    mgdbProcObj procObj;
+    mgdbProcObj procObj = {0};
     procObj.regs = (char*)regs2;
 
     minigdbstubWriteRegs(&procObj, &recvPkt);
@@ -70,7 +66,7 @@ TEST(minigdbstub, test_G) {
 
 TEST(minigdbstub, test_p) {
     gdbPacket mockPkt;
-    mgdbProcObj mgdbObj;
+    mgdbProcObj mgdbObj = {0};
     int regs[8] = {1,1,1,1,1,50,1,1};
     mgdbObj.regs = (char*)regs;
     mgdbObj.regsSize = sizeof(regs);
@@ -78,7 +74,11 @@ TEST(minigdbstub, test_p) {
     initDynCharBuffer(&mockPkt.pktData, 32);
 
     // Read register at index 6
+    insertDynCharBuffer(&mockPkt.pktData, '$');
     insertDynCharBuffer(&mockPkt.pktData, 'p');
+    insertDynCharBuffer(&mockPkt.pktData, '5');
+    insertDynCharBuffer(&mockPkt.pktData, '#');
+    insertDynCharBuffer(&mockPkt.pktData, 'a');
     insertDynCharBuffer(&mockPkt.pktData, '5');
     insertDynCharBuffer(&mockPkt.pktData, 0);
 
@@ -88,10 +88,16 @@ TEST(minigdbstub, test_p) {
 
     minigdbstubSendReg(&mgdbObj, &mockPkt);
     int actualResult = 0;
-    int rotL = 2;
+    int rotL = 1;
     std::rotate(testVec.begin(), testVec.begin()+rotL, testVec.end());
-    testVec.push_back(0);
+    auto it = std::find(testVec.begin(), testVec.end(), '#');
+    *it = 0;
     actualResult = strtol(testVec.data(), NULL, 16);
+    int byte0 = actualResult & 0xff;
+    int byte1 = (actualResult & 0xff00)     >> 8;
+    int byte2 = (actualResult & 0xff0000)   >> 8*2;
+    int byte3 = (actualResult & 0xff000000) >> 8*3;
+    actualResult = (byte0 << 8*3) | (byte1 << 8*2) | (byte2 << 8*1) | byte3;
     EXPECT_EQ(regs[5], actualResult);
     
     freeDynCharBuffer(&mockPkt.pktData);
@@ -99,7 +105,7 @@ TEST(minigdbstub, test_p) {
 
 TEST(minigdbstub, test_P) {
     gdbPacket mockPkt;
-    mgdbProcObj mgdbObj;
+    mgdbProcObj mgdbObj = {0};
     int regs[8] = {1,1,1,1,1,1,1,1};
     mgdbObj.regs = (char*)regs;
     mgdbObj.regsSize = sizeof(regs);

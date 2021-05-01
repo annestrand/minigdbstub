@@ -5,9 +5,9 @@
 #include <vector>
 
 // Test globals
-std::vector<char> *g_getcharPktHandle, *g_putcharPktHandle;
-std::vector<unsigned char> *g_memHandle;
-int g_getcharPktIndex;
+static std::vector<char> *g_getcharPktHandle, *g_putcharPktHandle;
+static std::vector<unsigned char> *g_memHandle;
+static int g_getcharPktIndex;
 
 // Mock putchar
 static void minigdbstubUsrPutchar(char c, void *usrData) {
