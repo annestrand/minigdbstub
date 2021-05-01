@@ -5,14 +5,24 @@
 import os
 import sys
 import subprocess
+import argparse
 
-# Grab all test bins
-testFolder = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), "build", "bin")
+# Parse test args
+parser = argparse.ArgumentParser(description="Test arg parser.")
+parser.add_argument("-f", "--test_filter", help="Provide optional test filter to gtest")
+parser.add_argument("-l", "--list", dest="list", action="store_true", help="List available tests to run")
+args = parser.parse_args()
 
-# If no arg given, run all tests - otherwise run the test-name given
-testBins = list(os.listdir(testFolder))
-if len(sys.argv) == 1:
-    for test in testBins:
-        subprocess.run([os.path.join(testFolder, test)])
-else:
-    subprocess.run([os.path.join(testFolder, sys.argv[1])])
+testBinary = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), "..", "build", "bin", "risa_tests")
+
+if args.list is not False:
+    subprocess.run([testBinary, "--gtest_list_tests"])
+    exit(0)
+
+# Build test string
+testStr = ""
+if args.test_filter is not None:
+    testStr += f"--gtest_filter=risa.{args.test_filter}"
+
+# Run test(s)
+subprocess.run([testBinary, testStr])
