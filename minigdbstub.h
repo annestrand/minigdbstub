@@ -46,8 +46,9 @@ static void freeDynCharBuffer(DynCharBuffer *buf) {
 
 #define MINIGDBSTUB_LOG(format, ...) do { fprintf(stderr, "[minigdbstub]: " format, __VA_ARGS__); } while(0)
 
-#define HEX_ENCODE_ASCII(in, len, out) snprintf(out, len, "%x", in)
 #define HEX_DECODE_ASCII(in, out) out = strtol(in, NULL, 16)
+#define HEX_ENCODE_ASCII(in, len, out) snprintf(out, len, "%x", in)
+#define DEC_ENCODE_ASCII(in, len, out) snprintf(out, len, "%d", in)
 
 // GDB Remote Serial Protocol packet object
 typedef struct {
@@ -335,7 +336,7 @@ static void minigdbstubSendSignal(mgdbProcObj *mgdbObj) {
 
     // Convert signal num to hex char array
     char itoaBuff[8] = {0,0,0,0,0,0,0,0};
-    HEX_ENCODE_ASCII(mgdbObj->signalNum, 8, itoaBuff);
+    DEC_ENCODE_ASCII(mgdbObj->signalNum, 8, itoaBuff);
 
     // Swap if single digit
     if (itoaBuff[1] == 0) {
