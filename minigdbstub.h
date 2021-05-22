@@ -39,6 +39,7 @@ static void freeDynCharBuffer(DynCharBuffer *buf) {
 #define RESEND_PACKET   "-"
 #define EMPTY_PACKET    "$#00"
 #define ERROR_PACKET    "$E00#96"
+#define OK_PACKET       "$OK#9a"
 
 #ifndef MINIGDBSTUB_PKT_SIZE
 #define MINIGDBSTUB_PKT_SIZE 256
@@ -63,6 +64,14 @@ typedef struct {
     unsigned int o_enableLogging : 1;
 } mgdbOpts;
 
+enum {
+    MGDB_SOFT_BREAKPOINT =  (1<<0),
+    MGDB_HARD_BREAKPOINT =  (1<<1),
+
+    MGDB_SET_BREAKPOINT =   (1<<2),
+    MGDB_CLEAR_BREAKPOINT = (1<<3)
+};
+
 // minigdbstub process call object
 typedef struct {
     char        *regs;      // Pointer to register array
@@ -80,6 +89,7 @@ static void minigdbstubUsrWriteMem(size_t addr, unsigned char data, void *usrDat
 static unsigned char minigdbstubUsrReadMem(size_t addr, void *usrData);
 static void minigdbstubUsrContinue(void *usrData);
 static void minigdbstubUsrStep(void *usrData);
+static void minigdbstubUsrProcessBreakpoint(int type, size_t addr, void *usrData);
 
 static void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
     unsigned int checksum = 0;
@@ -362,6 +372,39 @@ static void minigdbstubSendSignal(mgdbProcObj *mgdbObj) {
     freeDynCharBuffer(&sendPkt);
 }
 
+static void minigdbstubProcessBreakpoint(mgdbProcObj *mgdbObj, gdbPacket *recvPkt, int type) {
+    int offset = 0;
+    size_t address;
+    for (int i=0; recvPkt->pktData.buffer[i] != 0; ++i) {
+        if ((recvPkt->pktData.buffer[i] == ',')     ||
+                (recvPkt->pktData.buffer[i] == ';') ||
+                    (recvPkt->pktData.buffer[i] == ':')) {
+            if (offset > 0) {
+                recvPkt->pktData.buffer[i] = 0;
+                break;
+            }
+            offset = i+1;
+        }
+    }
+    HEX_DECODE_ASCII(&recvPkt->pktData.buffer[offset], address);
+
+    switch (recvPkt->pktData.buffer[2]) {
+        case '0': // Software breakpoint
+            type |= MGDB_SOFT_BREAKPOINT;
+            break;
+        case '1': // Hardware breakpoint
+            type |= MGDB_HARD_BREAKPOINT;
+            break;
+        default: // Other breakpoint/watchpoint type (unsupported)
+            break;
+    }
+    minigdbstubUsrProcessBreakpoint(type, address, mgdbObj->usrData);
+
+    // Send ACK + OK to GDB
+    minigdbstubSend(ACK_PACKET, mgdbObj);
+    minigdbstubSend(OK_PACKET, mgdbObj);
+}
+
 // Main gdb stub process call
 static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
     if (mgdbObj->opts.o_signalOnEntry) {
@@ -406,6 +449,14 @@ static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
             case 's':   {   // Step
                 minigdbstubUsrStep(mgdbObj->usrData);
                 return;
+            }
+            case 'Z':   {   // Place breakpoint
+                minigdbstubProcessBreakpoint(mgdbObj, &recvPkt, MGDB_SET_BREAKPOINT);
+                break;
+            }
+            case 'z':   {   // Remove breakpoint
+                minigdbstubProcessBreakpoint(mgdbObj, &recvPkt, MGDB_CLEAR_BREAKPOINT);
+                break;
             }
             case '?':   {   // Indicate reason why target halted
                 minigdbstubSendSignal(mgdbObj);

@@ -14,10 +14,6 @@ add_compile_options(-Wall)
 add_compile_options(-pedantic)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-add_executable(minigdbstub_tests
-    test_recv.cpp
-    test_send.cpp
-    test_regs.cpp
-    test_mem.cpp
-)
+file(GLOB SRCS *.cpp)
+add_executable(minigdbstub_tests ${SRCS})
 target_link_libraries(minigdbstub_tests ${GTEST} ${GTEST_MAIN} ${CMAKE_THREAD_LIBS_INIT})
