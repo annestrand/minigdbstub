@@ -90,6 +90,7 @@ static unsigned char minigdbstubUsrReadMem(size_t addr, void *usrData);
 static void minigdbstubUsrContinue(void *usrData);
 static void minigdbstubUsrStep(void *usrData);
 static void minigdbstubUsrProcessBreakpoint(int type, size_t addr, void *usrData);
+static void minigdbstubUsrKillSession(void *usrData);
 
 static void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
     unsigned int checksum = 0;
@@ -457,6 +458,10 @@ static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
             case 'z':   {   // Remove breakpoint
                 minigdbstubProcessBreakpoint(mgdbObj, &recvPkt, MGDB_CLEAR_BREAKPOINT);
                 break;
+            }
+            case 'k':   {   // Kill session
+                minigdbstubUsrKillSession(mgdbObj->usrData);
+                return;
             }
             case '?':   {   // Indicate reason why target halted
                 minigdbstubSendSignal(mgdbObj);
