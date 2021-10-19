@@ -54,12 +54,14 @@ static void minigdbstubUsrProcessBreakpoint(int type, size_t addr, void *usrData
     testBreak *brkObj = (testBreak*)usrData;
     brkObj->addr = addr;
 
-    if (type & MGDB_HARD_BREAKPOINT)  brkObj->bits.hardBreak = 1; 
+    if (type & MGDB_HARD_BREAKPOINT)  brkObj->bits.hardBreak = 1;
     if (type & MGDB_SOFT_BREAKPOINT)  brkObj->bits.softBreak = 1;
     if (type & MGDB_CLEAR_BREAKPOINT) brkObj->bits.isClear = 1;
     if (type & MGDB_SET_BREAKPOINT)   brkObj->bits.isSet = 1;
     return;
 }
+
+static void minigdbstubUsrKillSession(void *usrData) { return; }
 
 #define GTEST_COUT std::cerr << "\033[0;32m[ INFO     ] \033[0;37m"
 

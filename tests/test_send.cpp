@@ -7,7 +7,7 @@
 
 #include "test_common.hpp"
 #include "minigdbstub.h"
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
 
 static void cmpCharArrays(char *arr1, char *arr2, size_t size) {
     for (size_t i=0; i<size; ++i) {
@@ -27,19 +27,19 @@ static void buildSignalPkt(std::stringstream *s, int signal) {
 TEST(minigdbstub, basic_signals) {
     // Create signal test-packets
     std::stringstream sigtrapPkt;
-    buildSignalPkt(&sigtrapPkt, SIGTRAP);
+    buildSignalPkt(&sigtrapPkt, SIGINT);
     std::stringstream sigintPkt;
     buildSignalPkt(&sigintPkt, SIGINT);
     std::stringstream sigbusPkt;
-    buildSignalPkt(&sigbusPkt, SIGBUS);
+    buildSignalPkt(&sigbusPkt, SIGILL);
 
     // Create test putchar buffer
     std::vector<char> testBuff;
     g_putcharPktHandle = &testBuff;
 
-    GTEST_COUT << "Testing SIGTRAP...\n";
+    GTEST_COUT << "Testing SIGINT...\n";
     mgdbProcObj testObj = {0};
-    testObj.signalNum = SIGTRAP;
+    testObj.signalNum = SIGINT;
     minigdbstubSendSignal(&testObj);
     cmpCharArrays(const_cast<char*>(sigtrapPkt.str().c_str()),
         testBuff.data(), sizeof(sigtrapPkt.str().c_str())-1);
@@ -52,8 +52,8 @@ TEST(minigdbstub, basic_signals) {
         testBuff.data(), sizeof(sigintPkt.str().c_str())-1);
     testBuff.clear();
 
-    GTEST_COUT << "Testing SIGBUS...\n";
-    testObj.signalNum = SIGBUS;
+    GTEST_COUT << "Testing SIGILL...\n";
+    testObj.signalNum = SIGILL;
     minigdbstubSendSignal(&testObj);
     cmpCharArrays(const_cast<char*>(sigbusPkt.str().c_str()),
         testBuff.data(), sizeof(sigbusPkt.str().c_str())-1);
