@@ -7,16 +7,21 @@ project(minigdbstub_tests)
 find_package(GTest CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
-file(GLOB SRCS *.cpp)
-add_executable(minigdbstub_tests ${SRCS})
+add_executable(minigdbstub_tests)
+target_sources(minigdbstub_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_breakpoint.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_mem.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_recv.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_regs.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_send.cpp
+)
 target_include_directories(minigdbstub_tests PRIVATE ${CMAKE_SOURCE_DIR})
-target_compile_options(minigdbstub_tests PRIVATE "--std=c++11")
 if (MSVC)
-    target_compile_options(minigdbstub_tests PRIVATE "/W4")
+    target_compile_options(minigdbstub_tests PRIVATE "/Wall")
 else()
-    target_compile_options(minigdbstub_tests PRIVATE -Wall)
-    target_compile_options(minigdbstub_tests PRIVATE -pedantic)
-    target_compile_options(minigdbstub_tests PRIVATE -Wno-unused-function)
+    target_compile_options(minigdbstub_tests PRIVATE "-Wall")
+    target_compile_options(minigdbstub_tests PRIVATE "-pedantic")
+    target_compile_options(minigdbstub_tests PRIVATE "--std=c++11")
 endif()
 target_link_libraries(minigdbstub_tests
     GTest::gtest
