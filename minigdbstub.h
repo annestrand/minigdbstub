@@ -341,7 +341,6 @@ static void minigdbstubReadMem(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
 static void minigdbstubSendSignal(mgdbProcObj *mgdbObj) {
     DynCharBuffer sendPkt;
     initDynCharBuffer(&sendPkt, 32);
-    insertDynCharBuffer(&sendPkt, '+');
     insertDynCharBuffer(&sendPkt, '$');
     insertDynCharBuffer(&sendPkt, 'S');
 
