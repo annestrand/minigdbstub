@@ -363,7 +363,7 @@ static void minigdbstubSendSignal(mgdbProcObj *mgdbObj) {
 
     // Add the two checksum hex chars
     char checksumHex[8] = {0,0,0,0,0,0,0,0};
-    minigdbstubComputeChecksum(&sendPkt.buffer[2], bufferPtr+1, checksumHex);
+    minigdbstubComputeChecksum(&sendPkt.buffer[1], bufferPtr+1, checksumHex);
     insertDynCharBuffer(&sendPkt, checksumHex[0]);
     insertDynCharBuffer(&sendPkt, checksumHex[1]);
     insertDynCharBuffer(&sendPkt, 0);

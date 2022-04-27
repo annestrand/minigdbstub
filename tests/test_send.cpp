@@ -17,8 +17,8 @@ static void cmpCharArrays(char *arr1, char *arr2, size_t size) {
 
 static void buildSignalPkt(std::stringstream *s, int signal) {
     char checksum[8];
-    *(s) << "+$S" << std::setw(2) << std::setfill('0') << signal;
-    minigdbstubComputeChecksum(const_cast<char*>(s->str().c_str()+2), 3, checksum);
+    *(s) << "$S" << std::setw(2) << std::setfill('0') << signal;
+    minigdbstubComputeChecksum(const_cast<char*>(s->str().c_str()+1), 3, checksum);
     *(s) << "#" << checksum[0] << checksum[1];
 }
 
