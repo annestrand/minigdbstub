@@ -64,5 +64,6 @@ static void minigdbstubUsrProcessBreakpoint(int type, size_t addr, void *usrData
 static void minigdbstubUsrKillSession(void *usrData) { return; }
 
 #define GTEST_COUT std::cerr << "\033[0;32m[ INFO     ] \033[0;37m"
+#define GTEST_FAIL_IF_ERR(x) if (x != MGDB_SUCCESS) { FAIL() << #x << " != MGDB_SUCCESS"; }
 
 #endif // MINIGDBSTUB_TEST_COMMON_HPP

@@ -11,12 +11,12 @@
 TEST(minigdbstub, test_m) {
     gdbPacket mockPkt;
     mgdbProcObj mgdbObj = {0};
-    initDynCharBuffer(&mockPkt.pktData, 32);
+    GTEST_FAIL_IF_ERR(initDynCharBuffer(&mockPkt.pktData, 32));
 
     // Create mock memory
     std::vector<unsigned char> dummyMem(128);
-    dummyMem[8] = 'c';
-    dummyMem[9] = 'o';
+    dummyMem[8] =  'c';
+    dummyMem[9] =  'o';
     dummyMem[10] = 'o';
     dummyMem[11] = 'l';
     g_memHandle = &dummyMem;
@@ -26,14 +26,14 @@ TEST(minigdbstub, test_m) {
     g_putcharPktHandle = &dummyPutchar;
 
     // Read 4 bytes starting at address 0x8
-    insertDynCharBuffer(&mockPkt.pktData, 'm');
-    insertDynCharBuffer(&mockPkt.pktData, '8');
-    insertDynCharBuffer(&mockPkt.pktData, ',');
-    insertDynCharBuffer(&mockPkt.pktData, '4');
-    insertDynCharBuffer(&mockPkt.pktData, 0);
-
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'm'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '8'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, ','));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '4'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 0));
     minigdbstubReadMem(&mgdbObj, &mockPkt);
-    
+    GTEST_FAIL_IF_ERR(mgdbObj.err);
+
     // Verify putchar buffer matches the dummyMem
     for (int i=0; i<4; ++i) {
         char itoaBuff[3];
@@ -46,14 +46,13 @@ TEST(minigdbstub, test_m) {
         EXPECT_EQ(itoaBuff[0], (*g_putcharPktHandle)[(i*2)+1]);
         EXPECT_EQ(itoaBuff[1], (*g_putcharPktHandle)[(i*2)+2]);
     }
-    
     freeDynCharBuffer(&mockPkt.pktData);
 }
 
 TEST(minigdbstub, test_M) {
     mgdbProcObj mgdbObj = {0};
     gdbPacket mockPkt;
-    initDynCharBuffer(&mockPkt.pktData, 32);
+    GTEST_FAIL_IF_ERR(initDynCharBuffer(&mockPkt.pktData, 32));
 
     // Create mock memory
     std::vector<unsigned char> dummyMem(128);
@@ -64,25 +63,31 @@ TEST(minigdbstub, test_M) {
     g_putcharPktHandle = &putcharHandle;
 
     // Write '0xdeadbeef' starting at address 0x4
-    insertDynCharBuffer(&mockPkt.pktData, 'M');
-    insertDynCharBuffer(&mockPkt.pktData, '4');
-    insertDynCharBuffer(&mockPkt.pktData, ',');
-    insertDynCharBuffer(&mockPkt.pktData, '4');
-    insertDynCharBuffer(&mockPkt.pktData, ':');
-    insertDynCharBuffer(&mockPkt.pktData, 'd');
-    insertDynCharBuffer(&mockPkt.pktData, 'e');
-    insertDynCharBuffer(&mockPkt.pktData, 'a');
-    insertDynCharBuffer(&mockPkt.pktData, 'd');
-    insertDynCharBuffer(&mockPkt.pktData, 'b');
-    insertDynCharBuffer(&mockPkt.pktData, 'e');
-    insertDynCharBuffer(&mockPkt.pktData, 'e');
-    insertDynCharBuffer(&mockPkt.pktData, 'f');
-    insertDynCharBuffer(&mockPkt.pktData, 0);
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'M'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '4'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, ','));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '4'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, ':'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'd'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'e'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'a'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'd'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'b'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'e'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'e'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'f'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 0));
 
     minigdbstubWriteMem(&mgdbObj, &mockPkt);
+    GTEST_FAIL_IF_ERR(mgdbObj.err);
 
-    const unsigned char expectedValue[] = {(unsigned char)222, (unsigned char)173, 
-        (unsigned char)190, (unsigned char)239, (unsigned char)0};
+    const unsigned char expectedValue[] = {
+        (unsigned char)222,
+        (unsigned char)173,
+        (unsigned char)190,
+        (unsigned char)239,
+        (unsigned char)0
+    };
     for (int i=0; i<4; ++i) {
         EXPECT_EQ(dummyMem[4+i], expectedValue[i]);
     }

@@ -22,6 +22,7 @@ TEST(minigdbstub, test_g) {
     g_putcharPktHandle = &testVec;
     g_putcharPktHandle->clear();
     minigdbstubSendRegs(&mgdbObj);
+    GTEST_FAIL_IF_ERR(mgdbObj.err);
 
     for (size_t i=0; i<regSize; ++i) {
         char itoaBuff[3];
@@ -59,6 +60,7 @@ TEST(minigdbstub, test_G) {
     procObj.regs = (char*)regs2;
 
     minigdbstubWriteRegs(&procObj, &recvPkt);
+    GTEST_FAIL_IF_ERR(procObj.err);
     for (size_t i=0; i<sizeof(expectedResults)/sizeof(int); i++) {
         EXPECT_EQ(expectedResults[i], regs2[i]);
     }
@@ -71,22 +73,23 @@ TEST(minigdbstub, test_p) {
     mgdbObj.regs = (char*)regs;
     mgdbObj.regsSize = sizeof(regs);
     mgdbObj.regsCount = 8;
-    initDynCharBuffer(&mockPkt.pktData, 32);
+    GTEST_FAIL_IF_ERR(initDynCharBuffer(&mockPkt.pktData, 32));
 
     // Read register at index 6
-    insertDynCharBuffer(&mockPkt.pktData, '$');
-    insertDynCharBuffer(&mockPkt.pktData, 'p');
-    insertDynCharBuffer(&mockPkt.pktData, '5');
-    insertDynCharBuffer(&mockPkt.pktData, '#');
-    insertDynCharBuffer(&mockPkt.pktData, 'a');
-    insertDynCharBuffer(&mockPkt.pktData, '5');
-    insertDynCharBuffer(&mockPkt.pktData, 0);
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '$'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'p'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '5'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '#'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'a'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '5'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 0));
 
     std::vector<char> testVec;
     g_putcharPktHandle = &testVec;
     g_putcharPktHandle->clear();
 
     minigdbstubSendReg(&mgdbObj, &mockPkt);
+    GTEST_FAIL_IF_ERR(mgdbObj.err);
     int actualResult = 0;
     int rotL = 1;
     std::rotate(testVec.begin(), testVec.begin()+rotL, testVec.end());
@@ -99,7 +102,6 @@ TEST(minigdbstub, test_p) {
     int byte3 = (actualResult & 0xff000000) >> 8*3;
     actualResult = (byte0 << 8*3) | (byte1 << 8*2) | (byte2 << 8*1) | byte3;
     EXPECT_EQ(regs[5], actualResult);
-    
     freeDynCharBuffer(&mockPkt.pktData);
 }
 
@@ -110,18 +112,18 @@ TEST(minigdbstub, test_P) {
     mgdbObj.regs = (char*)regs;
     mgdbObj.regsSize = sizeof(regs);
     mgdbObj.regsCount = 8;
-    initDynCharBuffer(&mockPkt.pktData, 32);
+    GTEST_FAIL_IF_ERR(initDynCharBuffer(&mockPkt.pktData, 32));
 
     // Write '23' at register index 3
-    insertDynCharBuffer(&mockPkt.pktData, 'P');
-    insertDynCharBuffer(&mockPkt.pktData, '3');
-    insertDynCharBuffer(&mockPkt.pktData, '=');
-    insertDynCharBuffer(&mockPkt.pktData, '1');
-    insertDynCharBuffer(&mockPkt.pktData, '7');
-    insertDynCharBuffer(&mockPkt.pktData, 0);
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 'P'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '3'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '='));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '1'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, '7'));
+    GTEST_FAIL_IF_ERR(insertDynCharBuffer(&mockPkt.pktData, 0  ));
 
     minigdbstubWriteReg(&mgdbObj, &mockPkt);
+    GTEST_FAIL_IF_ERR(mgdbObj.err);
     EXPECT_EQ(regs[3], 23);
-    
     freeDynCharBuffer(&mockPkt.pktData);
 }

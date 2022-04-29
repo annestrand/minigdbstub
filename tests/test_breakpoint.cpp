@@ -21,15 +21,16 @@ TEST(minigdbstub, test_set_soft_breakpoint) {
     mgdbProcObj procObj = {0};
     procObj.usrData = &breakObj;
     gdbPacket gdbPkt;
-    initDynCharBuffer(&gdbPkt.pktData, MINIGDBSTUB_PKT_SIZE);
+    GTEST_FAIL_IF_ERR(initDynCharBuffer(&gdbPkt.pktData, 32));
     gdbPkt.commandType = 'Z';
     gdbPkt.checksum[0] = 'b';
     gdbPkt.checksum[1] = '2';
     gdbPkt.checksum[2] = 0;
     for (size_t i=0; i<strlen(packet); ++i) {
-        insertDynCharBuffer(&gdbPkt.pktData, packet[i]);
+        GTEST_FAIL_IF_ERR(insertDynCharBuffer(&gdbPkt.pktData, packet[i]));
     }
     minigdbstubProcessBreakpoint(&procObj, &gdbPkt, MGDB_SET_BREAKPOINT);
+    GTEST_FAIL_IF_ERR(procObj.err);
 
     testBreak *brkObj = (testBreak*)procObj.usrData;
     EXPECT_EQ(brkObj->addr, 0xd8U);

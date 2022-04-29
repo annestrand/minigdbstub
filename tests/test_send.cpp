@@ -15,11 +15,11 @@ static void cmpCharArrays(char *arr1, char *arr2, size_t size) {
     }
 }
 
-static void buildSignalPkt(std::stringstream *s, int signal) {
+static void buildSignalPkt(std::stringstream &s, int signal) {
     char checksum[8];
-    *(s) << "$S" << std::setw(2) << std::setfill('0') << signal;
-    minigdbstubComputeChecksum(const_cast<char*>(s->str().c_str()+1), 3, checksum);
-    *(s) << "#" << checksum[0] << checksum[1];
+    s << "$S" << std::setw(2) << std::setfill('0') << signal;
+    minigdbstubComputeChecksum(const_cast<char*>(s.str().c_str()+1), 3, checksum);
+    s << "#" << checksum[0] << checksum[1];
 }
 
 // --- Tests ---
@@ -27,11 +27,9 @@ static void buildSignalPkt(std::stringstream *s, int signal) {
 TEST(minigdbstub, basic_signals) {
     // Create signal test-packets
     std::stringstream sigtrapPkt;
-    buildSignalPkt(&sigtrapPkt, SIGINT);
-    std::stringstream sigintPkt;
-    buildSignalPkt(&sigintPkt, SIGINT);
+    buildSignalPkt(sigtrapPkt, SIGINT);
     std::stringstream sigbusPkt;
-    buildSignalPkt(&sigbusPkt, SIGILL);
+    buildSignalPkt(sigbusPkt, SIGILL);
 
     // Create test putchar buffer
     std::vector<char> testBuff;
@@ -41,21 +39,14 @@ TEST(minigdbstub, basic_signals) {
     mgdbProcObj testObj = {0};
     testObj.signalNum = SIGINT;
     minigdbstubSendSignal(&testObj);
-    cmpCharArrays(const_cast<char*>(sigtrapPkt.str().c_str()),
-        testBuff.data(), sizeof(sigtrapPkt.str().c_str())-1);
-    testBuff.clear();
-
-    GTEST_COUT << "Testing SIGINT...\n";
-    testObj.signalNum = SIGINT;
-    minigdbstubSendSignal(&testObj);
-    cmpCharArrays(const_cast<char*>(sigintPkt.str().c_str()),
-        testBuff.data(), sizeof(sigintPkt.str().c_str())-1);
+    GTEST_FAIL_IF_ERR(testObj.err);
+    cmpCharArrays(const_cast<char*>(sigtrapPkt.str().c_str()), testBuff.data(), sizeof(sigtrapPkt.str().c_str())-1);
     testBuff.clear();
 
     GTEST_COUT << "Testing SIGILL...\n";
     testObj.signalNum = SIGILL;
     minigdbstubSendSignal(&testObj);
-    cmpCharArrays(const_cast<char*>(sigbusPkt.str().c_str()),
-        testBuff.data(), sizeof(sigbusPkt.str().c_str())-1);
+    GTEST_FAIL_IF_ERR(testObj.err);
+    cmpCharArrays(const_cast<char*>(sigbusPkt.str().c_str()), testBuff.data(), sizeof(sigbusPkt.str().c_str())-1);
     testBuff.clear();
 }

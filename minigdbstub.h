@@ -5,35 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Basic dynamic char array utility for reading GDB packets
-#define ALLOC_ASSERT(ptr) do { \
-    if (ptr == NULL) { printf("[minigdbstub]: ERROR, could not allocate memory.\n"); } } while(0)
-typedef struct {
-    char *buffer;
-    size_t used;
-    size_t size;
-} DynCharBuffer;
-static void initDynCharBuffer(DynCharBuffer *buf, size_t startSize) {
-    buf->buffer = (char*)malloc(startSize * sizeof(char));
-    ALLOC_ASSERT(buf->buffer);
-    buf->used = 0;
-    buf->size = startSize;
-}
-static void insertDynCharBuffer(DynCharBuffer *buf, char item) {
-    // Realloc if buffer is full - double the array size
-    if (buf->used == buf->size) {
-        buf->size *= 2;
-        buf->buffer = (char*)realloc(buf->buffer, buf->size);
-        ALLOC_ASSERT(buf->buffer);
-    }
-    buf->buffer[buf->used++] = item;
-}
-static void freeDynCharBuffer(DynCharBuffer *buf) {
-    free(buf->buffer);
-    buf->buffer = NULL;
-    buf->used = buf->size = 0;
-}
-
 // Basic packets
 #define ACK_PACKET      "+"
 #define RESEND_PACKET   "-"
@@ -41,17 +12,74 @@ static void freeDynCharBuffer(DynCharBuffer *buf) {
 #define ERROR_PACKET    "$E00#96"
 #define OK_PACKET       "$OK#9a"
 
+#define MINIGDBSTUB_SEND "GDB <--- MGDB_STUB"
+#define MINIGDBSTUB_RECV "GDB ---> MGDB_STUB"
+
 #ifndef MINIGDBSTUB_PKT_SIZE
 #define MINIGDBSTUB_PKT_SIZE 256
 #endif
 
-#define MINIGDBSTUB_LOG(format, ...) do { fprintf(stderr, "[minigdbstub]: " format, __VA_ARGS__); } while(0)
+// Log/trace macros
+#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+#define LOG_I(msg, ...) \
+    printf("[minigdbstub] INFO  [ %12s:%-6d ]%20s : " msg, __FILENAME__, __LINE__, __func__, ##__VA_ARGS__)
+#define LOG_W(msg, ...) \
+    printf("[minigdbstub] WARN  [ %12s:%-6d ]%20s : " msg, __FILENAME__, __LINE__, __func__, ##__VA_ARGS__)
+#define LOG_E(msg, ...) \
+    printf("[minigdbstub] ERROR [ %12s:%-6d ]%20s : " msg, __FILENAME__, __LINE__, __func__, ##__VA_ARGS__)
+#define LOG_TRACE(msg, ...) \
+    printf("[minigdbstub] : " msg, ##__VA_ARGS__)
 
 #define HEX_DECODE_ASCII(in, out) out = strtol(in, NULL, 16)
-#define HEX_ENCODE_ASCII(in, len, out) snprintf(out, len, "%x", in)
-#define DEC_ENCODE_ASCII(in, len, out) snprintf(out, len, "%d", in)
+#define HEX_ENCODE_ASCII(in, len, out)  snprintf(out, len, "%x", in)
+#define DEC_ENCODE_ASCII(in, len, out)  snprintf(out, len, "%d", in)
 
-// GDB Remote Serial Protocol packet object
+// Set if error and return early
+#define MGDB_CHECK_RET(ret, mgdbObj) do {   \
+    mgdbObj->err = ret;                     \
+    if (mgdbObj->err != MGDB_SUCCESS) {     \
+        return;                             \
+    }} while(0)
+
+enum { MGDB_SUCCESS, MGDB_ALLOC_FAILED };
+
+// Basic dynamic char array utility for reading GDB packets
+typedef struct {
+    char *buffer;
+    size_t used;
+    size_t size;
+} DynCharBuffer;
+
+static int initDynCharBuffer(DynCharBuffer *buf, size_t startSize) {
+    buf->buffer = (char*)malloc(startSize * sizeof(char));
+    if (buf->buffer == NULL) {
+        LOG_E("Failed to alloc memory!\n");
+        return MGDB_ALLOC_FAILED;
+    }
+    buf->used = 0;
+    buf->size = startSize;
+    return MGDB_SUCCESS;
+}
+static int insertDynCharBuffer(DynCharBuffer *buf, char item) {
+    // Realloc if buffer is full - double the array size
+    if (buf->used == buf->size) {
+        buf->size *= 2;
+        buf->buffer = (char*)realloc(buf->buffer, buf->size);
+        if (buf->buffer == NULL) {
+            LOG_E("Failed to realloc memory!\n");
+            return MGDB_ALLOC_FAILED;
+        }
+    }
+    buf->buffer[buf->used++] = item;
+    return MGDB_SUCCESS;
+}
+static void freeDynCharBuffer(DynCharBuffer *buf) {
+    free(buf->buffer);
+    buf->buffer = NULL;
+    buf->used = buf->size = 0;
+}
+
+// GDB Remote Serial Protocol packet object s
 typedef struct {
     char commandType;
     DynCharBuffer pktData;
@@ -79,18 +107,20 @@ typedef struct {
     size_t      regsCount;  // Total number of registers
     int         signalNum;  // Signal that can be sent to GDB on certain operations
     mgdbOpts    opts;       // Options bitfield
+    int         err;        // Return-error code
     void        *usrData;   // Optional handle to opaque user data
 } mgdbProcObj;
 
-// User stubs
-static void minigdbstubUsrPutchar(char data, void *usrData);
-static char minigdbstubUsrGetchar(void *usrData);
-static void minigdbstubUsrWriteMem(size_t addr, unsigned char data, void *usrData);
-static unsigned char minigdbstubUsrReadMem(size_t addr, void *usrData);
-static void minigdbstubUsrContinue(void *usrData);
-static void minigdbstubUsrStep(void *usrData);
-static void minigdbstubUsrProcessBreakpoint(int type, size_t addr, void *usrData);
-static void minigdbstubUsrKillSession(void *usrData);
+// === User stubs =====================================================================================================
+static void             minigdbstubUsrPutchar(char data, void *usrData);
+static char             minigdbstubUsrGetchar(void *usrData);
+static void             minigdbstubUsrWriteMem(size_t addr, unsigned char data, void *usrData);
+static unsigned char    minigdbstubUsrReadMem(size_t addr, void *usrData);
+static void             minigdbstubUsrContinue(void *usrData);
+static void             minigdbstubUsrStep(void *usrData);
+static void             minigdbstubUsrProcessBreakpoint(int type, size_t addr, void *usrData);
+static void             minigdbstubUsrKillSession(void *usrData);
+// ====================================================================================================================
 
 static void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
     unsigned int checksum = 0;
@@ -109,7 +139,7 @@ static void minigdbstubComputeChecksum(char *buffer, size_t len, char *outBuf) {
 static void minigdbstubSend(const char *data, mgdbProcObj *mgdbObj) {
     size_t len = strlen(data);
     if (mgdbObj->opts.o_enableLogging) {
-        MINIGDBSTUB_LOG("GDB <--- minigdbstub : packet = %s\n", data);
+        LOG_TRACE(MINIGDBSTUB_SEND " : packet = %s\n", data);
     }
     for (size_t i=0; i<len; ++i) {
         minigdbstubUsrPutchar(data[i], mgdbObj->usrData);
@@ -135,10 +165,10 @@ static void minigdbstubRecv(mgdbProcObj *mgdbObj, gdbPacket *gdbPkt) {
                 gdbPkt->checksum[0] = minigdbstubUsrGetchar(mgdbObj->usrData);
                 gdbPkt->checksum[1] = minigdbstubUsrGetchar(mgdbObj->usrData);
                 gdbPkt->checksum[2] = 0;
-                insertDynCharBuffer(&gdbPkt->pktData, 0);
+                MGDB_CHECK_RET(insertDynCharBuffer(&gdbPkt->pktData, 0), mgdbObj);
                 break;
             }
-            insertDynCharBuffer(&gdbPkt->pktData, c);
+            MGDB_CHECK_RET(insertDynCharBuffer(&gdbPkt->pktData, c), mgdbObj);
             ++currentOffset;
         }
 
@@ -154,8 +184,7 @@ static void minigdbstubRecv(mgdbProcObj *mgdbObj, gdbPacket *gdbPkt) {
 
         gdbPkt->commandType = gdbPkt->pktData.buffer[0];
         if (mgdbObj->opts.o_enableLogging) {
-            MINIGDBSTUB_LOG("GDB ---> minigdbstub : packet = %s%s%s%s\n",
-                "$", gdbPkt->pktData.buffer, "#", gdbPkt->checksum);
+            LOG_TRACE(MINIGDBSTUB_RECV " : packet = $%s#%s\n", gdbPkt->pktData.buffer, gdbPkt->checksum);
         }
         minigdbstubSend(ACK_PACKET, mgdbObj);
         return;
@@ -196,12 +225,15 @@ static void minigdbstubWriteReg(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
     tmpRecPkt.pktData.buffer = &recvPkt->pktData.buffer[valOffset];
 
     minigdbstubWriteRegs(&tmpProcObj, &tmpRecPkt);
+    if (tmpProcObj.err != MGDB_SUCCESS) {
+        mgdbObj->err = tmpProcObj.err;
+    }
 }
 
 static void minigdbstubSendRegs(mgdbProcObj *mgdbObj) {
     DynCharBuffer sendPkt;
-    initDynCharBuffer(&sendPkt, 512);
-    insertDynCharBuffer(&sendPkt, '$');
+    MGDB_CHECK_RET(initDynCharBuffer(&sendPkt, 512),   mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, '$'), mgdbObj);
 
     for (size_t i=0; i<mgdbObj->regsSize; ++i) {
         char itoaBuff[8];
@@ -213,18 +245,18 @@ static void minigdbstubSendRegs(mgdbProcObj *mgdbObj) {
             itoaBuff[0] = '0';
         }
 
-        insertDynCharBuffer(&sendPkt, itoaBuff[0]);
-        insertDynCharBuffer(&sendPkt, itoaBuff[1]);
+        MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, itoaBuff[0]), mgdbObj);
+        MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, itoaBuff[1]), mgdbObj);
     }
 
     // Compute and append the checksum
     char checksum[8];
     size_t len = sendPkt.used - 1;
     minigdbstubComputeChecksum(&sendPkt.buffer[1], len, checksum);
-    insertDynCharBuffer(&sendPkt, '#');
-    insertDynCharBuffer(&sendPkt, checksum[0]);
-    insertDynCharBuffer(&sendPkt, checksum[1]);
-    insertDynCharBuffer(&sendPkt, 0);
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, '#'),         mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, checksum[0]), mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, checksum[1]), mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, 0),           mgdbObj);
 
     minigdbstubSend((const char*)sendPkt.buffer, mgdbObj);
     freeDynCharBuffer(&sendPkt);
@@ -234,13 +266,16 @@ static void minigdbstubSendReg(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
     int index;
     size_t regWidth = mgdbObj->regsSize / mgdbObj->regsCount;
     HEX_DECODE_ASCII(&recvPkt->pktData.buffer[2], index);
-    
+
     mgdbProcObj tmpProcObj = *mgdbObj;
     tmpProcObj.regsCount = 1;
     tmpProcObj.regs = &mgdbObj->regs[index * regWidth];
     tmpProcObj.regsSize = regWidth;
-    
+
     minigdbstubSendRegs(&tmpProcObj);
+    if (tmpProcObj.err != MGDB_SUCCESS) {
+        mgdbObj->err = tmpProcObj.err;
+    }
 }
 
 static void minigdbstubWriteMem(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
@@ -306,8 +341,8 @@ static void minigdbstubReadMem(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
 
     // Alloc a packet w/ the requested data to send as a response to GDB
     DynCharBuffer memBuf;
-    initDynCharBuffer(&memBuf, length);
-    insertDynCharBuffer(&memBuf, '$');
+    MGDB_CHECK_RET(initDynCharBuffer(&memBuf, length), mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&memBuf, '$'),  mgdbObj);
 
     // Call user read memory handler
     for (size_t i=0; i<length; ++i) {
@@ -321,18 +356,18 @@ static void minigdbstubReadMem(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
             itoaBuff[0] = '0';
         }
 
-        insertDynCharBuffer(&memBuf, itoaBuff[0]);
-        insertDynCharBuffer(&memBuf, itoaBuff[1]);
+        MGDB_CHECK_RET(insertDynCharBuffer(&memBuf, itoaBuff[0]), mgdbObj);
+        MGDB_CHECK_RET(insertDynCharBuffer(&memBuf, itoaBuff[1]), mgdbObj);
     }
 
     // Compute and append the checksum
     char checksum[8];
     size_t len = memBuf.used - 1;
     minigdbstubComputeChecksum(&memBuf.buffer[1], len, checksum);
-    insertDynCharBuffer(&memBuf, '#');
-    insertDynCharBuffer(&memBuf, checksum[0]);
-    insertDynCharBuffer(&memBuf, checksum[1]);
-    insertDynCharBuffer(&memBuf, 0);
+    MGDB_CHECK_RET(insertDynCharBuffer(&memBuf, '#'),         mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&memBuf, checksum[0]), mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&memBuf, checksum[1]), mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&memBuf, 0),           mgdbObj);
 
     minigdbstubSend((const char*)memBuf.buffer, mgdbObj);
     freeDynCharBuffer(&memBuf);
@@ -340,9 +375,9 @@ static void minigdbstubReadMem(mgdbProcObj *mgdbObj, gdbPacket *recvPkt) {
 
 static void minigdbstubSendSignal(mgdbProcObj *mgdbObj) {
     DynCharBuffer sendPkt;
-    initDynCharBuffer(&sendPkt, 32);
-    insertDynCharBuffer(&sendPkt, '$');
-    insertDynCharBuffer(&sendPkt, 'S');
+    MGDB_CHECK_RET(initDynCharBuffer(&sendPkt, 32),    mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, '$'), mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, 'S'), mgdbObj);
 
     // Convert signal num to hex char array
     char itoaBuff[8] = {0,0,0,0,0,0,0,0};
@@ -356,17 +391,17 @@ static void minigdbstubSendSignal(mgdbProcObj *mgdbObj) {
 
     int bufferPtr = 0;
     while (itoaBuff[bufferPtr] != 0) {
-        insertDynCharBuffer(&sendPkt, itoaBuff[bufferPtr]);
+        MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, itoaBuff[bufferPtr]), mgdbObj);
         ++bufferPtr;
     }
-    insertDynCharBuffer(&sendPkt, '#');
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, '#'), mgdbObj);
 
     // Add the two checksum hex chars
     char checksumHex[8] = {0,0,0,0,0,0,0,0};
     minigdbstubComputeChecksum(&sendPkt.buffer[1], bufferPtr+1, checksumHex);
-    insertDynCharBuffer(&sendPkt, checksumHex[0]);
-    insertDynCharBuffer(&sendPkt, checksumHex[1]);
-    insertDynCharBuffer(&sendPkt, 0);
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, checksumHex[0]), mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, checksumHex[1]), mgdbObj);
+    MGDB_CHECK_RET(insertDynCharBuffer(&sendPkt, 0),              mgdbObj);
 
     minigdbstubSend((const char*)sendPkt.buffer, mgdbObj);
     freeDynCharBuffer(&sendPkt);
@@ -408,13 +443,12 @@ static void minigdbstubProcessBreakpoint(mgdbProcObj *mgdbObj, gdbPacket *recvPk
 // Main gdb stub process call
 static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
     if (mgdbObj->opts.o_signalOnEntry) {
-            minigdbstubSendSignal(mgdbObj);
+        minigdbstubSendSignal(mgdbObj);
     }
-
     // Poll and reply to packets from GDB until exit-related command
     while (1) {
         gdbPacket recvPkt;
-        initDynCharBuffer(&recvPkt.pktData, MINIGDBSTUB_PKT_SIZE);
+        MGDB_CHECK_RET(initDynCharBuffer(&recvPkt.pktData, MINIGDBSTUB_PKT_SIZE), mgdbObj);
         minigdbstubRecv(mgdbObj, &recvPkt);
 
         switch(recvPkt.commandType) {
@@ -471,10 +505,8 @@ static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
                 break;
             }
         }
-
         // Cleanup packet mem
         freeDynCharBuffer(&recvPkt.pktData);
     }
 }
-
 #endif // MINIGDBSTUB_H
