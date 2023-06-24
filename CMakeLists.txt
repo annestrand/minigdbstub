@@ -16,10 +16,10 @@ target_sources(minigdbstub_tests PRIVATE
 )
 target_include_directories(minigdbstub_tests PRIVATE ${CMAKE_SOURCE_DIR})
 if (MSVC)
-    target_compile_options(minigdbstub_tests PRIVATE "/Wall")
+    target_compile_options(minigdbstub_tests PRIVATE "/WX")
 else()
     target_compile_options(minigdbstub_tests PRIVATE "-Wall")
-    target_compile_options(minigdbstub_tests PRIVATE "-pedantic")
+    target_compile_options(minigdbstub_tests PRIVATE "-Werror")
     # Certain tests dont use all of the stub's functions - silence this
     target_compile_options(minigdbstub_tests PRIVATE "-Wno-unused-function")
 endif()
