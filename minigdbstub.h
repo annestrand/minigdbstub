@@ -1,5 +1,4 @@
-#ifndef MGDB_H
-#define MGDB_H
+#pragma once
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -509,5 +508,3 @@ static void minigdbstubProcess(mgdbProcObj *mgdbObj) {
         freeDynCharBuffer(&recvPkt.pktData);
     }
 }
-
-#endif // MGDB_H
