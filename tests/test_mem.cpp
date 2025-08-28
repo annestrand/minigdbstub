@@ -37,7 +37,7 @@ TEST(minigdbstub, test_m) {
     // Verify putchar buffer matches the dummyMem
     for (int i=0; i<4; ++i) {
         char itoaBuff[3];
-        HEX_ENCODE_ASCII(dummyMem[i+8], 3, itoaBuff);
+        MGDB_HEX_ENCODE_ASCII(dummyMem[i+8], 3, itoaBuff);
         // Swap if single digit
         if (itoaBuff[1] == 0) {
             itoaBuff[1] = itoaBuff[0];

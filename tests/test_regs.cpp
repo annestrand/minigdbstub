@@ -26,7 +26,7 @@ TEST(minigdbstub, test_g) {
 
     for (size_t i=0; i<regSize; ++i) {
         char itoaBuff[3];
-        HEX_ENCODE_ASCII(mgdbObj.regs[i], 3, itoaBuff);
+        MGDB_HEX_ENCODE_ASCII(mgdbObj.regs[i], 3, itoaBuff);
         // Swap if single digit
         if (itoaBuff[1] == 0) {
             itoaBuff[1] = itoaBuff[0];

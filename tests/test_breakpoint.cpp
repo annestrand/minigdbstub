@@ -17,9 +17,9 @@ TEST(minigdbstub, test_set_soft_breakpoint) {
     std::vector<char> dummyPutchar;
     g_putcharPktHandle = &dummyPutchar;
 
-    testBreak breakObj = {0};
+    testBreak breakObj  = {{0}};
     mgdbProcObj procObj = {0};
-    procObj.usrData = &breakObj;
+    procObj.usrData     = &breakObj;
     gdbPacket gdbPkt;
     GTEST_FAIL_IF_ERR(initDynCharBuffer(&gdbPkt.pktData, 32));
     gdbPkt.commandType = 'Z';

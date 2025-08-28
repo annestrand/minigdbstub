@@ -33,7 +33,7 @@ TEST(minigdbstub, test_recvs) {
 
         mgdbProcObj procObj = {0};
         gdbPacket gdbPkt;
-        GTEST_FAIL_IF_ERR(initDynCharBuffer(&gdbPkt.pktData, MINIGDBSTUB_PKT_SIZE));
+        GTEST_FAIL_IF_ERR(initDynCharBuffer(&gdbPkt.pktData, MGDB_PKT_SIZE));
 
         minigdbstubRecv(&procObj, &gdbPkt);
         GTEST_FAIL_IF_ERR(procObj.err);
