@@ -1,3 +1,5 @@
+# ⚠️ This repo has been deprecated, project has a new home as [aca_gdbstub.h](https://github.com/annestrand/aca) 👈 
+
 # minigdbstub
 A target-agnostic minimal GDB stub that interfaces using the GDB Remote Serial Protocol.
 
